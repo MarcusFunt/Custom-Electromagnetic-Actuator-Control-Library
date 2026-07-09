@@ -14,7 +14,8 @@ authors = [
 ]
 dependencies = [
   "matplotlib>=3.7",
-  "numpy>=1.24"
+  "numpy>=1.24",
+  "tomli>=2.0.1; python_version < '3.11'"
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ dev = [
 
 [project.scripts]
 emac-phase0 = "emac_sim.cli:main"
+emac-sim = "emac_sim.cli:main"
 emac-visual = "emac_sim.visual:main"
 
 [tool.setuptools.packages.find]
