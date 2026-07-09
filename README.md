@@ -27,6 +27,20 @@ For a smoke run without plots:
 emac-phase0 --no-plots
 ```
 
+## Run the Visual Simulator
+
+Generate a standalone browser visualizer:
+
+```powershell
+emac-visual --outdir build/visual
+```
+
+If the console script is not on `PATH`, use the module entrypoint:
+
+```powershell
+python -m emac_sim.visual --outdir build/visual
+```
+
 The legacy entrypoint still works:
 
 ```powershell

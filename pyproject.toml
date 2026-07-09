@@ -24,6 +24,7 @@ dev = [
 
 [project.scripts]
 emac-phase0 = "emac_sim.cli:main"
+emac-visual = "emac_sim.visual:main"
 
 [tool.setuptools.packages.find]
 where = ["tools/python"]
