@@ -60,6 +60,14 @@ def f_current(i: float, p: PendulumParams) -> float:
     return p.Cmag * (i * i) / (1.0 + (i / p.i_sat) ** 2)
 
 
+def f_current_pm(i: float, k_a: float) -> float:
+    """Permanent-magnet branch current law (docs/DESIGN.md section 3.3): linear and
+    SIGNED, unlike the soft-iron branch above -- i>0 attracts, i<0 repels. Shared/reusable
+    wherever a coil couples to a magnetized (not just reluctance) target; see
+    linear_plant.py's hybrid reluctance+PM slug for the linear stepper's use of it."""
+    return k_a * i
+
+
 def tau_mag(theta: float, i: float, p: PendulumParams) -> float:
     """Magnetic torque about the pivot. Always RESTORING (toward center) when i>0."""
     return q_shape(theta, p.theta_c) * f_current(i, p)
@@ -121,3 +129,18 @@ def amplitude_from_energy(E: float, p: PendulumParams) -> float:
 
 def energy_for_amplitude(A: float, p: PendulumParams) -> float:
     return p.m * p.g * p.L * (1.0 - math.cos(A))
+
+
+def rl_current_step(i: float, v_applied: float, r: float, l: float, dt: float) -> float:
+    """Exact update for a first-order RL circuit (L di/dt = v_applied - i*r), assuming
+    v_applied is piecewise-constant over dt. Coordinate/geometry-agnostic (not pendulum- or
+    linear-stepper-specific) -- shared here so either model can use it once it needs real
+    electrical dynamics instead of an idealized instantaneous current source.
+
+    Uses the closed-form exponential solution rather than explicit Euler: unconditionally
+    stable regardless of how dt compares to the L/R time constant, which matters once
+    inductance is small relative to the simulation step.
+    """
+    tau = l / r
+    i_ss = v_applied / r        # steady-state current this voltage would settle to
+    return i_ss + (i - i_ss) * math.exp(-dt / tau)

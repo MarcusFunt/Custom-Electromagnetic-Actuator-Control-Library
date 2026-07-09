@@ -9,11 +9,11 @@ from collections.abc import Sequence
 
 from emac_sim import PendulumParams, Tier1Estimator, EnergySupervisor, Simulator
 from emac_sim import plant
-from emac_sim.config import SimulationConfig, default_config, load_config
+from emac_sim.config import LinearSimulationConfig, SimulationConfig, default_config, load_config
 from emac_sim.config_summary import config_summary
 
 
-def load_or_default_config(path: str | None) -> SimulationConfig:
+def load_or_default_config(path: str | None) -> "SimulationConfig | LinearSimulationConfig":
     return load_config(path) if path else default_config()
 
 
@@ -193,6 +193,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = load_or_default_config(args.config)
+
+    if isinstance(config, LinearSimulationConfig):
+        from . import linear_cli
+        return linear_cli.run(args, config)
+
     print_config_summary(config, args.config)
     _, log = run_scenario(t_end=args.t_end, config=config)
     print_convergence_table(log)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from emac_sim import PendulumParams
 from emac_sim.cli import run_scenario, steady_state_rms_error
-from emac_sim.config import SimulationConfig, default_config, load_config
+from emac_sim.config import LinearSimulationConfig, SimulationConfig, default_config, load_config
 from emac_sim.config_summary import config_summary
 
 
@@ -90,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = load_config(args.config) if args.config else default_config()
+    if isinstance(config, LinearSimulationConfig):
+        raise SystemExit(
+            "emac-visual does not yet support `[sim] kind = \"linear_stepper\"` configs "
+            "-- use `emac-sim --config ...` for the linear stepper's text/plot report "
+            "(docs/DESIGN_LINEAR.md notes the interactive tube visualizer as a fast-follow)."
+        )
     p, log = run_scenario(t_end=args.t_end, config=config)
     html_path = write_visual_simulator(p, log, args.outdir, config=config, config_source=args.config)
     print(f"wrote {html_path}")

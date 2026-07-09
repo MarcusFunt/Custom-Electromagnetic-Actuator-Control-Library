@@ -549,6 +549,10 @@ then compute `slew_max`, `τ_r`, `T_p` from them.
 
 ## 6. Scaling to the coil ring (with the stall caveat)
 
+> A **finite line** instead of a wrapping ring -- N coils + N gates, ferromagnetic slug,
+> one-way commutation -- is the other natural generalization of the single-coil pendulum.
+> See `docs/DESIGN_LINEAR.md` (implemented in `tools/python/emac_sim/linear_*.py`).
+
 The same `Crossing` → phase machinery scales. For **N magnets with N gates between
 them**, partition the rotor angle into N sectors of 2π/N; each `Crossing(sensor_id)`
 marks a sector-boundary transition; between gates you dead-reckon ψ from rotor speed,

@@ -1,0 +1,96 @@
+# Fictional hardware config for the linear one-way stepper: a slug with NO iron, only a
+# permanent magnet, in a tube wound with 5 air-core coils, 5 photogates (one entry gate +
+# one between each adjacent coil pair). See docs/DESIGN_LINEAR.md. `[sim] kind =
+# "linear_stepper"` selects this geometry. Each coil's k_a_n_per_a is the PM-branch
+# (linear, signed) force gain -- the only force term here, since c_mag_n_per_a2 = 0.0
+# (no iron to give a reluctance response; set it nonzero to model a hybrid slug instead).
+# `[driver] current_loop = "rl"` simulates each coil's actual electrical response (R, L)
+# instead of assuming current is instantaneously commandable.
+
+[sim]
+kind = "linear_stepper"
+duration_s = 3.0
+dt_s = 0.0002
+sample_every = 10
+
+[actuator]
+mass_kg = 0.20
+damping_n_per_mps = 0.05
+initial_position_m = -0.03
+initial_velocity_m_s = 0.0
+end_of_travel = "coast"
+
+[[gates]]
+position_m = -0.025
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.025
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.075
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.125
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.175
+effective_width_m = 0.004
+
+[[coils]]
+position_m = 0.00
+x_c_m = 0.020
+c_mag_n_per_a2 = 0.0
+i_sat_a = 6.0
+max_current_a = 6.0
+k_a_n_per_a = 0.20
+
+[[coils]]
+position_m = 0.05
+x_c_m = 0.020
+c_mag_n_per_a2 = 0.0
+i_sat_a = 6.0
+max_current_a = 6.0
+k_a_n_per_a = 0.20
+
+[[coils]]
+position_m = 0.10
+x_c_m = 0.020
+c_mag_n_per_a2 = 0.0
+i_sat_a = 6.0
+max_current_a = 6.0
+k_a_n_per_a = 0.20
+
+[[coils]]
+position_m = 0.15
+x_c_m = 0.020
+c_mag_n_per_a2 = 0.0
+i_sat_a = 6.0
+max_current_a = 6.0
+k_a_n_per_a = 0.20
+
+[[coils]]
+position_m = 0.20
+x_c_m = 0.020
+c_mag_n_per_a2 = 0.0
+i_sat_a = 6.0
+max_current_a = 6.0
+k_a_n_per_a = 0.20
+
+[driver]
+bus_voltage_v = 12.0
+pwm_frequency_hz = 20000.0
+current_loop = "rl"
+
+[controller]
+kind = "stepper_supervisor"
+target_velocity_m_s = 0.5
+k_velocity = 0.30
+pulse_width_half_period_fraction = 0.30
+phase_advance_s = 0.002
+bootstrap_dwell_s = 0.05
+bootstrap_timeout_s = 0.20
+i_max_a = 6.0

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .config import SimulationConfig
+from .config import LinearSimulationConfig, SimulationConfig
 
 
 def config_summary(config: SimulationConfig, source: str | None = None) -> dict:
@@ -52,4 +52,54 @@ def config_summary(config: SimulationConfig, source: str | None = None) -> dict:
             {"t_s": segment.t_s, "amplitude_rad": segment.amplitude_rad}
             for segment in config.target_segments
         ],
+    }
+
+
+def linear_config_summary(config: LinearSimulationConfig, source: str | None = None) -> dict:
+    """Return JSON-serializable headline values for the linear stepper's visual reports.
+    Sibling of config_summary() -- kept separate rather than branching one function on
+    config type, since the two configs share no fields in common."""
+    return {
+        "source": source or "built-in linear stepper default",
+        "actuator": {
+            "mass_kg": config.actuator.mass_kg,
+            "damping_n_per_mps": config.actuator.damping_n_per_mps,
+            "initial_position_m": config.actuator.initial_position_m,
+            "end_of_travel": config.actuator.end_of_travel,
+            "pressure_bias_n": config.actuator.pressure_bias_n,
+        },
+        "gates": [
+            {"position_m": g.position_m, "effective_width_m": g.effective_width_m}
+            for g in config.gates
+        ],
+        "coils": [
+            {
+                "position_m": c.position_m,
+                "x_c_m": c.x_c_m,
+                "c_mag_n_per_a2": c.c_mag_n_per_a2,
+                "i_sat_a": c.i_sat_a,
+                "max_current_a": c.max_current_a,
+                "k_a_n_per_a": c.k_a_n_per_a,
+                "resistance_ohm": c.resistance_ohm,
+                "inductance_h": c.inductance_h,
+            }
+            for c in config.coils
+        ],
+        "driver": {
+            "bus_voltage_v": config.driver.bus_voltage_v,
+            "pwm_frequency_hz": config.driver.pwm_frequency_hz,
+            "current_loop": config.driver.current_loop,
+        },
+        "controller": {
+            "kind": config.controller.kind,
+            "target_velocity_m_s": config.controller.target_velocity_m_s,
+            "k_velocity": config.controller.k_velocity,
+            "pulse_width_half_period_fraction": config.controller.pulse_width_half_period_fraction,
+            "phase_advance_s": config.controller.phase_advance_s,
+        },
+        "sim": {
+            "duration_s": config.duration_s,
+            "dt_s": config.dt_s,
+            "sample_every": config.sample_every,
+        },
     }
