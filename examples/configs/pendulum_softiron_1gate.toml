@@ -1,0 +1,56 @@
+# Fictional hardware config for the Phase 0 soft-iron, one-gate pendulum simulator.
+# Edit this file first when exploring possible physical builds.
+
+[pendulum]
+length_m = 0.30
+bob_mass_kg = 0.050
+quality_factor = 200.0
+initial_angle_rad = 0.06
+initial_omega_rad_s = 0.0
+
+[gate]
+kind = "photogate"
+angle_rad = 0.0
+angular_width_rad = 0.060
+noise_std_s = 0.0
+dropout_probability = 0.0
+
+[coil]
+angle_rad = 0.0
+theta_c_rad = 0.05
+c_mag_nm_per_a2 = 0.010
+i_sat_a = 8.0
+resistance_ohm = 1.2
+inductance_h = 0.004
+max_current_a = 8.0
+thermal_mass_j_per_k = 12.0
+thermal_resistance_k_per_w = 8.0
+
+[driver]
+bus_voltage_v = 12.0
+pwm_frequency_hz = 20000.0
+current_loop = "ideal"
+
+[controller]
+kind = "energy_supervisor"
+target_amplitude_rad = 0.30
+k_energy = 0.35
+pulse_width_half_period_fraction = 0.30
+hold_deadband_fraction = 0.02
+
+[[target.segments]]
+t_s = 0.0
+amplitude_rad = 0.35
+
+[[target.segments]]
+t_s = 8.0
+amplitude_rad = 0.20
+
+[[target.segments]]
+t_s = 15.0
+amplitude_rad = 0.30
+
+[sim]
+duration_s = 22.0
+dt_s = 0.0002
+sample_every = 10

@@ -5,6 +5,10 @@ electromagnetic actuator control library. It models a soft-iron, attract-only
 magnetic pendulum and validates the estimator/supervisor loop before firmware is
 written.
 
+The immediate goal is a configurable **virtual actuator lab**: define fictional
+pendulum, gate, coil, driver, and controller values in a TOML file, run the sim on
+a PC, inspect the plots/visualizer, and use the results to guide later hardware.
+
 The future hardware target remains the one documented in `docs/DESIGN.md`:
 ESP32-S3, hardware timer capture for the photogate, and a unipolar coil power
 stage for a soft-iron bob.
@@ -15,13 +19,19 @@ stage for a soft-iron bob.
 python -m pip install -e .[dev]
 ```
 
-## Run the Phase 0 Demo
+## Run a Configurable Simulation
 
 ```powershell
-emac-phase0 --outdir build/phase0
+emac-sim --config examples/configs/pendulum_softiron_1gate.toml --outdir build/phase0
 ```
 
-For a smoke run without plots:
+Override the configured duration for a quick smoke run:
+
+```powershell
+emac-sim --config examples/configs/pendulum_softiron_1gate.toml --t-end 3 --no-plots
+```
+
+The legacy fixed-demo command still works and uses the built-in Phase 0 defaults:
 
 ```powershell
 emac-phase0 --no-plots
@@ -29,16 +39,22 @@ emac-phase0 --no-plots
 
 ## Run the Visual Simulator
 
-Generate a standalone browser visualizer:
+Generate a standalone browser visualizer from the default Phase 0 scenario:
 
 ```powershell
 emac-visual --outdir build/visual
 ```
 
+Generate it from a fictional-hardware config:
+
+```powershell
+emac-visual --config examples/configs/pendulum_softiron_1gate.toml --outdir build/visual
+```
+
 If the console script is not on `PATH`, use the module entrypoint:
 
 ```powershell
-python -m emac_sim.visual --outdir build/visual
+python -m emac_sim.visual --config examples/configs/pendulum_softiron_1gate.toml --outdir build/visual
 ```
 
 The legacy entrypoint still works:
@@ -55,6 +71,10 @@ python -m pytest
 ```
 
 ## Next Milestone
+
+Phase 0B is the configurable virtual-hardware milestone: TOML configs for fictional
+pendulums, gates, coils, drivers, and controller settings; visual comparison of runs;
+and later sweeps over coil/sensor/controller parameters.
 
 Phase 1 is the first hardware milestone: ESP32-S3 capture input, unipolar coil
 power stage, timing-budget proof, and a sustained one-gate swing.

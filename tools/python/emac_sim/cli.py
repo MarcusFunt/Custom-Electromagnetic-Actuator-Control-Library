@@ -9,11 +9,22 @@ from collections.abc import Sequence
 
 from emac_sim import PendulumParams, Tier1Estimator, EnergySupervisor, Simulator
 from emac_sim import plant
+from emac_sim.config import SimulationConfig, default_config, load_config
+from emac_sim.config_summary import config_summary
 
 
-def make_target(p: PendulumParams):
-    energy = lambda A: plant.energy_for_amplitude(A, p)
-    segments = [(0.0, energy(0.35)), (8.0, energy(0.20)), (15.0, energy(0.30))]
+def load_or_default_config(path: str | None) -> SimulationConfig:
+    return load_config(path) if path else default_config()
+
+
+def make_target(p: PendulumParams, config: SimulationConfig | None = None):
+    config = config or default_config()
+    segments = [
+        (segment.t_s, plant.energy_for_amplitude(segment.amplitude_rad, p))
+        for segment in config.target_segments
+    ]
+    if not segments:
+        segments = [(0.0, plant.energy_for_amplitude(config.controller.target_amplitude_rad, p))]
 
     def target_E(t: float) -> float:
         current = segments[0][1]
@@ -21,18 +32,57 @@ def make_target(p: PendulumParams):
             if t >= ts:
                 current = value
         return current
-
     return target_E
 
 
-def run_scenario(t_end: float = 22.0):
-    p = PendulumParams()
+def run_scenario(t_end: float | None = None, config: SimulationConfig | None = None):
+    config = config or default_config()
+    p = config.to_pendulum_params()
     est = Tier1Estimator(p)
-    sup = EnergySupervisor(p, k_E=0.35, T_p_frac=0.30, i_max=p.i_sat)
-    sim = Simulator(p, est, sup, dt=2e-4, sample_every=10)
-    target_E = make_target(p)
-    log = sim.run(theta0=0.06, omega0=0.0, target_E=target_E, t_end=t_end)
+    sup = EnergySupervisor(
+        p,
+        k_E=config.controller.k_energy,
+        T_p_frac=config.controller.pulse_width_half_period_fraction,
+        i_max=config.primary_coil.max_current_a,
+        eps_frac=config.controller.hold_deadband_fraction,
+    )
+    sim = Simulator(p, est, sup, dt=config.dt_s, sample_every=config.sample_every)
+    target_E = make_target(p, config)
+    log = sim.run(
+        theta0=config.pendulum.initial_angle_rad,
+        omega0=config.pendulum.initial_omega_rad_s,
+        target_E=target_E,
+        t_end=config.duration_s if t_end is None else t_end,
+    )
     return p, log
+
+
+def print_config_summary(config: SimulationConfig, source: str | None) -> None:
+    summary = config_summary(config, source)
+    print(f"simulation config: {summary['source']}")
+    print(
+        "  pendulum: "
+        f"L={summary['pendulum']['length_m']:g} m, "
+        f"m={summary['pendulum']['bob_mass_kg']:g} kg, "
+        f"Q={summary['pendulum']['quality_factor']:g}"
+    )
+    print(
+        "  gate[0]:   "
+        f"angle={summary['gate0']['angle_rad']:g} rad, "
+        f"width={summary['gate0']['angular_width_rad']:g} rad"
+    )
+    print(
+        "  coil[0]:   "
+        f"theta_c={summary['coil0']['theta_c_rad']:g} rad, "
+        f"Cmag={summary['coil0']['c_mag_nm_per_a2']:g} N*m/A^2, "
+        f"Imax={summary['coil0']['max_current_a']:g} A"
+    )
+    print(
+        "  controller: "
+        f"target={summary['controller']['target_amplitude_rad']:g} rad, "
+        f"k_E={summary['controller']['k_energy']:g}, "
+        f"T_p_frac={summary['controller']['pulse_width_half_period_fraction']:g}"
+    )
 
 
 def print_convergence_table(log) -> None:
@@ -133,15 +183,18 @@ def write_plots(log, outdir: str) -> tuple[str, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the EMAC Phase 0 host simulator.")
+    parser.add_argument("--config", help="TOML file describing fictional hardware and sim settings.")
     parser.add_argument("--outdir", default=os.path.join("tools", "python", "out"))
-    parser.add_argument("--t-end", type=float, default=22.0)
+    parser.add_argument("--t-end", type=float, default=None, help="Override the config simulation duration.")
     parser.add_argument("--no-plots", action="store_true")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    _, log = run_scenario(t_end=args.t_end)
+    config = load_or_default_config(args.config)
+    print_config_summary(config, args.config)
+    _, log = run_scenario(t_end=args.t_end, config=config)
     print_convergence_table(log)
     report_steady_state(log)
 
