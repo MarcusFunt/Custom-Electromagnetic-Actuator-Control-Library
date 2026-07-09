@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emac-sim"
+version = "0.1.0"
+description = "Phase 0 host simulator for an electromagnetic actuator control library."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Custom Electromagnetic Actuator Control Library contributors" }
+]
+dependencies = [
+  "matplotlib>=3.7",
+  "numpy>=1.24"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8"
+]
+
+[project.scripts]
+emac-phase0 = "emac_sim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["tools/python"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tools/python"]
+addopts = "-ra"
+asyncio_default_fixture_loop_scope = "function"
