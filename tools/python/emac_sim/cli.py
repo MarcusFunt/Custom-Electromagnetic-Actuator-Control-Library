@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from emac_sim import PendulumParams, Tier1Estimator, EnergySupervisor, Simulator
 from emac_sim import plant
 from emac_sim.config import SimulationConfig, default_config, load_config
+from emac_sim.config_summary import config_summary
 
 
 def load_or_default_config(path: str | None) -> SimulationConfig:
@@ -57,30 +58,30 @@ def run_scenario(t_end: float | None = None, config: SimulationConfig | None = N
 
 
 def print_config_summary(config: SimulationConfig, source: str | None) -> None:
-    label = source if source else "built-in Phase 0 default"
-    print(f"simulation config: {label}")
+    summary = config_summary(config, source)
+    print(f"simulation config: {summary['source']}")
     print(
         "  pendulum: "
-        f"L={config.pendulum.length_m:g} m, "
-        f"m={config.pendulum.bob_mass_kg:g} kg, "
-        f"Q={config.pendulum.quality_factor:g}"
+        f"L={summary['pendulum']['length_m']:g} m, "
+        f"m={summary['pendulum']['bob_mass_kg']:g} kg, "
+        f"Q={summary['pendulum']['quality_factor']:g}"
     )
     print(
         "  gate[0]:   "
-        f"angle={config.primary_gate.angle_rad:g} rad, "
-        f"width={config.primary_gate.angular_width_rad:g} rad"
+        f"angle={summary['gate0']['angle_rad']:g} rad, "
+        f"width={summary['gate0']['angular_width_rad']:g} rad"
     )
     print(
         "  coil[0]:   "
-        f"theta_c={config.primary_coil.theta_c_rad:g} rad, "
-        f"Cmag={config.primary_coil.c_mag_nm_per_a2:g} N*m/A^2, "
-        f"Imax={config.primary_coil.max_current_a:g} A"
+        f"theta_c={summary['coil0']['theta_c_rad']:g} rad, "
+        f"Cmag={summary['coil0']['c_mag_nm_per_a2']:g} N*m/A^2, "
+        f"Imax={summary['coil0']['max_current_a']:g} A"
     )
     print(
         "  controller: "
-        f"target={config.controller.target_amplitude_rad:g} rad, "
-        f"k_E={config.controller.k_energy:g}, "
-        f"T_p_frac={config.controller.pulse_width_half_period_fraction:g}"
+        f"target={summary['controller']['target_amplitude_rad']:g} rad, "
+        f"k_E={summary['controller']['k_energy']:g}, "
+        f"T_p_frac={summary['controller']['pulse_width_half_period_fraction']:g}"
     )
 
 
