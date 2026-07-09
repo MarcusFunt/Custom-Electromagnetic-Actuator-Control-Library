@@ -31,7 +31,7 @@ class Tier1Estimator:
         self.omega = self.p.omega0
         self.T_half = math.pi / self.p.omega0
         self.zeta_w0 = self.p.omega0 / (2.0 * self.p.Q)   # initial damping guess
-        self.direction = +1      # sign of motion just after the last crossing
+        self.direction = -1      # sign of motion just after the last crossing
         self.n = 0
 
     def on_crossing(self, t: float, pulse_width: float, pulsed: bool = False):
