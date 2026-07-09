@@ -39,16 +39,22 @@ emac-phase0 --no-plots
 
 ## Run the Visual Simulator
 
-Generate a standalone browser visualizer:
+Generate a standalone browser visualizer from the default Phase 0 scenario:
 
 ```powershell
 emac-visual --outdir build/visual
 ```
 
+Generate it from a fictional-hardware config:
+
+```powershell
+emac-visual --config examples/configs/pendulum_softiron_1gate.toml --outdir build/visual
+```
+
 If the console script is not on `PATH`, use the module entrypoint:
 
 ```powershell
-python -m emac_sim.visual --outdir build/visual
+python -m emac_sim.visual --config examples/configs/pendulum_softiron_1gate.toml --outdir build/visual
 ```
 
 The legacy entrypoint still works:
