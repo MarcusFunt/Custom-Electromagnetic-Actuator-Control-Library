@@ -15,11 +15,13 @@ from emac_sim.config import LinearSimulationConfig, SimulationConfig, default_co
 from emac_sim.config_summary import config_summary
 
 
+
 def build_visual_payload(
     p: PendulumParams,
     log,
     config: SimulationConfig | None = None,
     config_source: str | None = None,
+    opt_result: tuple | None = None,
 ) -> dict:
     """Convert a simulation log into compact JSON-serializable browser data."""
     max_theta = max([abs(x) for x in log.theta] + [abs(x) for x in log.theta_est] + [0.1])
@@ -59,7 +61,17 @@ def build_visual_payload(
     }
     if config is not None:
         payload["config"] = config_summary(config, config_source)
+    if opt_result is not None:
+        best_knobs, best_speed, opt_obj, expected_nfev = opt_result
+        payload["optimizer"] = {
+            "best_knobs": vars(best_knobs),
+            "best_speed": best_speed,
+            "nfev": getattr(opt_obj, "nfev", None),
+            "nit": getattr(opt_obj, "nit", None),
+            "expected_nfev": expected_nfev,
+        }
     return payload
+
 
 
 def write_visual_simulator(
@@ -68,14 +80,19 @@ def write_visual_simulator(
     outdir: str | os.PathLike[str],
     config: SimulationConfig | None = None,
     config_source: str | None = None,
+    opt_result: tuple | None = None,
 ) -> Path:
     """Write a standalone visual simulator HTML file and return its path."""
     out_path = Path(outdir)
     out_path.mkdir(parents=True, exist_ok=True)
     html_path = out_path / "phase0_visual.html"
-    payload = json.dumps(build_visual_payload(p, log, config, config_source), separators=(",", ":"))
+    payload = json.dumps(
+        build_visual_payload(p, log, config, config_source, opt_result),
+        separators=(",", ":"),
+    )
     html_path.write_text(_HTML_TEMPLATE.replace("__EMAC_DATA__", payload), encoding="utf-8")
     return html_path
+
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,7 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--outdir", default=os.path.join("build", "visual"))
     parser.add_argument("--t-end", type=float, default=None, help="Override the config simulation duration.")
     parser.add_argument("--open", action="store_true", help="Open the generated HTML in the default browser.")
+    parser.add_argument("--run-optimizer", action="store_true",
+                        help="Run the linear stepper optimizer and embed its results in the HTML.")
+    parser.add_argument("--opt-maxiter", type=int, default=15,
+                        help="Maximum number of optimizer iterations.")
+    parser.add_argument("--opt-popsize", type=int, default=12,
+                        help="Population size for the optimizer.")
+    parser.add_argument("--opt-max-tube-length-m", type=float, default=1.0,
+                        help="Maximum tube length constraint (m) for the optimizer.")
     return parser
+
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -97,18 +123,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             "(docs/DESIGN_LINEAR.md notes the interactive tube visualizer as a fast-follow)."
         )
     p, log = run_scenario(t_end=args.t_end, config=config)
-    html_path = write_visual_simulator(p, log, args.outdir, config=config, config_source=args.config)
+    opt_result = None
+    if getattr(args, "run_optimizer", False):
+        from emac_sim.optimize_design import optimize, Bounds
+        maxiter = args.opt_maxiter
+        popsize = args.opt_popsize
+        bounds = Bounds(max_tube_length_m=args.opt_max_tube_length_m)
+        expected_nfev = maxiter * popsize * 11
+        best_knobs, best_speed, result = optimize(bounds=bounds, maxiter=maxiter, popsize=popsize)
+        opt_result = (best_knobs, best_speed, result, expected_nfev)
+    html_path = write_visual_simulator(
+        p,
+        log,
+        args.outdir,
+        config=config,
+        config_source=args.config,
+        opt_result=opt_result,
+    )
     print(f"wrote {html_path}")
     if args.open:
         webbrowser.open(html_path.resolve().as_uri())
     return 0
 
 
+
 def _round_series(values, digits: int) -> list[float]:
     return [round(float(value), digits) for value in values]
 
 
-_HTML_TEMPLATE = r"""<!doctype html>
+__HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -298,12 +341,6 @@ _HTML_TEMPLATE = r"""<!doctype html>
       background: var(--blue);
     }
 
-    .timeline {
-      grid-column: 1 / -1;
-      position: relative;
-      overflow: hidden;
-    }
-
     .config-block {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -316,6 +353,43 @@ _HTML_TEMPLATE = r"""<!doctype html>
     .config-block b {
       color: var(--ink);
       font-weight: 650;
+    }
+
+    .optimizer {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      padding: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .progress-container {
+      height: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-bar {
+      height: 100%;
+      background: var(--blue);
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+    .opt-meta {
+      margin-bottom: 6px;
+    }
+    .opt-results table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .opt-results td {
+      padding: 2px 4px;
+    }
+    .opt-results td:first-child {
+      font-weight: 600;
+      color: var(--ink);
     }
 
     @media (max-width: 900px) {
@@ -356,6 +430,13 @@ _HTML_TEMPLATE = r"""<!doctype html>
         <div class="legend-row"><span class="swatch" style="background: var(--amber)"></span>crossing / pulse plan</div>
       </div>
       <div class="config-block" id="configBlock"></div>
+      <div class="optimizer" id="optimizer">
+        <div class="progress-container">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="opt-meta" id="optMeta"></div>
+        <div class="opt-results" id="optResults"></div>
+      </div>
     </aside>
     <section class="timeline"><canvas id="traceCanvas"></canvas></section>
   </main>
@@ -541,6 +622,39 @@ function renderConfig() {
   `;
 }
 
+function renderOptimizer() {
+  const opt = DATA.optimizer;
+  const container = document.getElementById('optimizer');
+  if (!container) return;
+  const progressBar = document.getElementById('progressBar');
+  const optMeta = document.getElementById('optMeta');
+  const optResults = document.getElementById('optResults');
+  if (!opt) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  const pct = (opt.expected_nfev && opt.nfev) ? Math.min(1, opt.nfev / opt.expected_nfev) : 1;
+  if (progressBar) {
+    progressBar.style.width = String(Math.round(pct * 100)) + '%';
+  }
+  if (optMeta) {
+    const nit = (opt.nit !== undefined && opt.nit !== null) ? opt.nit : '';
+    optMeta.textContent = `best speed: ${opt.best_speed.toFixed(3)} m/s · iterations: ${nit} · evaluations: ${opt.nfev}`;
+  }
+  if (optResults) {
+    const knobs = opt.best_knobs || {};
+    let html = '<table>';
+    for (const key in knobs) {
+      if (Object.prototype.hasOwnProperty.call(knobs, key)) {
+        html += `<tr><td>${key}</td><td>${knobs[key]}</td></tr>`;
+      }
+    }
+    html += '</table>';
+    optResults.innerHTML = html;
+  }
+}
+
 function render() {
   const t = DATA.series.t[idx] || 0;
   mTime.textContent = `${t.toFixed(2)} s`;
@@ -584,6 +698,7 @@ function tick(now) {
 
 renderConfig();
 render();
+renderOptimizer();
 requestAnimationFrame(tick);
 </script>
 </body>
