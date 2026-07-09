@@ -109,6 +109,15 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Population size for the optimizer.")
     parser.add_argument("--opt-max-tube-length-m", type=float, default=1.0,
                         help="Maximum tube length constraint (m) for the optimizer.")
+    # Additional optimizer options for parity with optimize_design.py
+    parser.add_argument("--opt-seed", type=int, default=0,
+                        help="Random seed for the optimizer.")
+    parser.add_argument("--opt-workers", type=int, default=1,
+                        help="Parallel worker processes for the optimizer (1=sequential).")
+    parser.add_argument("--opt-dt", type=float, default=2e-4,
+                        help="Simulation step size for the optimizer (s).")
+    parser.add_argument("--opt-t-end", type=float, default=3.0,
+                        help="Per-evaluation simulated duration for the optimizer (s).")
     return parser
 
 
@@ -128,9 +137,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         from emac_sim.optimize_design import optimize, Bounds
         maxiter = args.opt_maxiter
         popsize = args.opt_popsize
+        seed = args.opt_seed
+        workers = args.opt_workers
+        dt = args.opt_dt
+        opt_t_end = args.opt_t_end
         bounds = Bounds(max_tube_length_m=args.opt_max_tube_length_m)
         expected_nfev = maxiter * popsize * 11
-        best_knobs, best_speed, result = optimize(bounds=bounds, maxiter=maxiter, popsize=popsize)
+        best_knobs, best_speed, result = optimize(bounds=bounds, maxiter=maxiter, popsize=popsize,
+                                                  seed=seed, dt=dt, t_end=opt_t_end, workers=workers)
         opt_result = (best_knobs, best_speed, result, expected_nfev)
     html_path = write_visual_simulator(
         p,
@@ -151,7 +165,9 @@ def _round_series(values, digits: int) -> list[float]:
     return [round(float(value), digits) for value in values]
 
 
-__HTML_TEMPLATE = r"""<!doctype html>
+# Define __HTML_TEMPLATE below; alias _HTML_TEMPLATE will be assigned after definition
+
+_HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -304,110 +320,7 @@ __HTML_TEMPLATE = r"""<!doctype html>
       padding: 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--panel-2);
-    }
-
-    .metric .label {
-      color: var(--muted);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-
-    .metric .value {
-      margin-top: 4px;
-      font-size: 18px;
-      font-weight: 680;
-    }
-
-    .legend {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .legend-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .swatch {
-      width: 20px;
-      height: 3px;
-      border-radius: 999px;
-      background: var(--blue);
-    }
-
-    .config-block {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel-2);
-      padding: 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .config-block b {
-      color: var(--ink);
-      font-weight: 650;
-    }
-
-    .optimizer {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel-2);
-      padding: 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .progress-container {
-      height: 8px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-    .progress-bar {
-      height: 100%;
-      background: var(--blue);
-      width: 0%;
-      transition: width 0.4s ease;
-    }
-    .opt-meta {
-      margin-bottom: 6px;
-    }
-    .opt-results table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .opt-results td {
-      padding: 2px 4px;
-    }
-    .opt-results td:first-child {
-      font-weight: 600;
-      color: var(--ink);
-    }
-
-    @media (max-width: 900px) {
-      main {
-        grid-template-columns: 1fr;
-        grid-template-rows: 420px auto 240px;
-      }
-
-      .timeline { grid-column: 1; }
-    }
-  </style>
-</head>
-<body>
-<div class="app">
-  <header>
-    <div>
-      <h1>EMAC Phase 0 Visual Simulator</h1>
-      <div class="run-meta"><span class="status-dot"></span><span id="runMeta">ready</span></div>
+      backgrou[... ELLIPSIZATION ...]a"><span class="status-dot"></span><span id="runMeta">ready</span></div>
     </div>
   </header>
   <main>
@@ -640,7 +553,7 @@ function renderOptimizer() {
   }
   if (optMeta) {
     const nit = (opt.nit !== undefined && opt.nit !== null) ? opt.nit : '';
-    optMeta.textContent = `best speed: ${opt.best_speed.toFixed(3)} m/s · iterations: ${nit} · evaluations: ${opt.nfev}`;
+    optMeta.textContent = `optimizer run status: best speed: ${opt.best_speed.toFixed(3)} m/s · iterations: ${nit} · evaluations: ${opt.nfev}`;
   }
   if (optResults) {
     const knobs = opt.best_knobs || {};
