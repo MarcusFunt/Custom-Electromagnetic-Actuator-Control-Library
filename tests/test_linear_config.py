@@ -84,7 +84,9 @@ def test_k_a_n_per_a_defaults_are_consistent_between_dataclass_and_toml_fallback
     out of sync once already for x_c_m/initial_position_m; pin k_a explicitly."""
     from_missing_section = parse_config({"sim": {"kind": "linear_stepper"}})
     from_partial_entry = parse_config(
-        {"sim": {"kind": "linear_stepper"}, "coils": [{"position_m": 0.0}]}
+        {"sim": {"kind": "linear_stepper"},
+         "coils": [{"position_m": 0.0}],
+         "gates": [{"position_m": -0.025}]}
     )
     assert from_missing_section.coils[0].k_a_n_per_a == pytest.approx(0.20)
     assert from_partial_entry.coils[0].k_a_n_per_a == pytest.approx(0.20)
@@ -114,6 +116,7 @@ def test_thermal_model_defaults_off_and_is_configurable():
             "sim": {"kind": "linear_stepper"},
             "actuator": {"thermal_model": True, "ambient_temperature_c": 35.0},
             "coils": [{"thermal_mass_j_per_k": 9.0, "thermal_resistance_k_per_w": 6.0}],
+            "gates": [{"position_m": -0.025}],
         }
     )
     assert warm.actuator.thermal_model is True
@@ -131,7 +134,7 @@ def test_linear_config_values_affect_run_scenario():
     config = parse_config(
         {
             "sim": {"kind": "linear_stepper", "duration_s": 0.5, "dt_s": 0.0005, "sample_every": 5},
-            "actuator": {"mass_kg": 0.15, "initial_position_m": -0.02},
+            "actuator": {"mass_kg": 0.15, "initial_position_m": -0.03},
             "controller": {"target_velocity_m_s": 0.4},
         }
     )
@@ -141,3 +144,29 @@ def test_linear_config_values_affect_run_scenario():
 
     assert p.mass_kg == pytest.approx(0.15)
     assert log.t[-1] == pytest.approx(0.5, abs=0.01)
+
+
+def test_invalid_or_removed_driver_fields_are_rejected_instead_of_silently_ignored():
+    with pytest.raises(ValueError, match="current_loop"):
+        parse_config({"sim": {"kind": "linear_stepper"},
+                      "driver": {"current_loop": "typo"}})
+    with pytest.raises(ValueError, match="pwm_frequency_hz"):
+        parse_config({"sim": {"kind": "linear_stepper"},
+                      "driver": {"pwm_frequency_hz": 20_000}})
+
+
+def test_linear_topology_validation_rejects_mismatched_gate_count():
+    with pytest.raises(ValueError, match="one ordered gate per coil"):
+        parse_config({"sim": {"kind": "linear_stepper"},
+                      "coils": [{"position_m": 0.0}],
+                      "gates": [{"position_m": -0.02}, {"position_m": 0.02}]})
+
+
+def test_exit_plane_and_full_thrust_are_configurable():
+    config = parse_config({
+        "sim": {"kind": "linear_stepper"},
+        "actuator": {"exit_position_m": 0.25},
+        "controller": {"full_thrust": True},
+    })
+    assert config.controller.full_thrust is True
+    assert config.to_actuator_params().resolved_exit_position_m == pytest.approx(0.25)

@@ -20,16 +20,7 @@ angle_rad = 0.0
 theta_c_rad = 0.05
 c_mag_nm_per_a2 = 0.010
 i_sat_a = 8.0
-resistance_ohm = 1.2
-inductance_h = 0.004
 max_current_a = 8.0
-thermal_mass_j_per_k = 12.0
-thermal_resistance_k_per_w = 8.0
-
-[driver]
-bus_voltage_v = 12.0
-pwm_frequency_hz = 20000.0
-current_loop = "ideal"
 
 [controller]
 kind = "energy_supervisor"

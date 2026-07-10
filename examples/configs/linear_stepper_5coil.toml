@@ -45,7 +45,6 @@ position_m = 0.00
 x_c_m = 0.020
 c_mag_n_per_a2 = 0.0
 i_sat_a = 6.0
-max_current_a = 6.0
 k_a_n_per_a = 0.20
 
 [[coils]]
@@ -53,7 +52,6 @@ position_m = 0.05
 x_c_m = 0.020
 c_mag_n_per_a2 = 0.0
 i_sat_a = 6.0
-max_current_a = 6.0
 k_a_n_per_a = 0.20
 
 [[coils]]
@@ -61,7 +59,6 @@ position_m = 0.10
 x_c_m = 0.020
 c_mag_n_per_a2 = 0.0
 i_sat_a = 6.0
-max_current_a = 6.0
 k_a_n_per_a = 0.20
 
 [[coils]]
@@ -69,7 +66,6 @@ position_m = 0.15
 x_c_m = 0.020
 c_mag_n_per_a2 = 0.0
 i_sat_a = 6.0
-max_current_a = 6.0
 k_a_n_per_a = 0.20
 
 [[coils]]
@@ -77,12 +73,10 @@ position_m = 0.20
 x_c_m = 0.020
 c_mag_n_per_a2 = 0.0
 i_sat_a = 6.0
-max_current_a = 6.0
 k_a_n_per_a = 0.20
 
 [driver]
 bus_voltage_v = 12.0
-pwm_frequency_hz = 20000.0
 current_loop = "rl"
 
 [controller]

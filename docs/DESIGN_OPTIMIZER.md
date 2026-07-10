@@ -62,10 +62,10 @@ self-heating WITHIN one run, not a duty-cycle notion of repeated runs back-to-ba
 firing this actuator once, cooling, then firing again isn't distinguished from doing so
 continuously.
 
-**Magnet / slug** (`magnet_mass_kg`, `estimate_k_a`, `build_coil_station`): the slug is a
+**Magnet / slug** (`magnet_mass_kg`, `winding_volume_coupling_table`, `build_coil_station`): the slug is a
 cylindrical magnet of given radius, length, and remanence (`Br`). Mass is volume x density
 (NdFeB ~7500 kg/m^3 default). The PM-branch thrust constant follows the standard voice-
-coil relation `F = B_gap * L_wire * i`, `L_wire = turns * 2*pi*mean_radius` -- **using the
+coil relation `dF = B_rho * dL_wire * i` -- **using the
 RADIAL field component B_rho, not the axial one B_z**. This matters: force on an azimuthal
 (coil) current comes from `I * dL x B`, and an azimuthal `dL` crossed with a radial B gives
 an axial force -- B_z doesn't enter that cross product at all. An earlier version of this
@@ -77,15 +77,13 @@ quantity, and it showed: k_a came out *negative* for several reasonable coil geo
 the magnet as an equivalent solenoid (a uniformly magnetized cylinder of remanence Br is
 magnetically equivalent to a surface current density Br/mu_0) and integrating the exact
 single-loop Biot-Savart result (elliptic integrals, via `scipy.special.ellipk/ellipe`) over
-the magnet's length. B_rho is **odd about the magnet's own axial center** by symmetry --
+the magnet's length. The coupling builder distributes turns across axial/radial winding
+cells and sums every cell's `B_rho*dL`, producing a complete position table `K(x)`.
+Changing axial coil length therefore changes both the peak and width of magnetic coupling,
+not only resistance and inductance. B_rho is **odd about the magnet's own axial center** by symmetry --
 zero at the center, growing to an interior maximum somewhere between the center and a pole
-face, then decaying to zero far away -- structurally the same shape as `q_shape` (odd,
-zero at center, peaked lobes). `_peak_radial_coupling` finds that peak with a coarse grid
-scan (simple and robust, consistent with this model's overall rigor; cheap enough -- done
-once per coil at build time, not per simulation step -- not to matter for the optimizer's
-runtime), and `build_coil_station` uses **both** the peak value (for `k_a`) **and** its
-location (for `x_c`) -- x_c is no longer an independent heuristic, it's wherever that
-field profile actually peaks. `on_axis_field_cylinder_magnet` (the simpler on-axis-only
+face, then decaying to zero far away. `build_coil_station` stores the complete table,
+its peak as `k_a`, and the peak location as `x_c`. `on_axis_field_cylinder_magnet` (the simpler on-axis-only
 formula) is kept alongside as a cross-check anchor -- `off_axis_field_cylinder_magnet`
 (the B_z off-axis calculation, still available, just not what k_a uses) is checked against
 it in the rho->0 limit in tests.
@@ -265,13 +263,11 @@ converges on `True`, that's a real, physically load-bearing recommendation, not 
 
 ## 3. What "speed" means here
 
-The objective is the slug's velocity as it clears the last gate, with the supervisor's
-velocity governor (`target_velocity_m_s`) effectively disabled (set far above anything
-achievable) -- see `docs/DESIGN_LINEAR.md` section on "governed vs. true ceiling". This is
-a pure speed-maximization search, not a tracking or efficiency one. A design that FAULTs
-(bootstrap never got a gate response -- too weak to move the slug at all) or clears zero
-gates scores 0.0, same as one that violates the tube-length budget -- both push the search
-away from that region rather than crashing it.
+The objective is the slug's interpolated velocity at a physical exit plane beyond the
+final coil's useful lobe. The supervisor uses explicit `full_thrust` mode, not a finite
+velocity sentinel. A candidate scores zero unless every ordered gate and the exit plane
+are crossed; partial traversal and timeout cannot be rewarded as a slow "exit". This is
+still a pure speed-maximization search, not a tracking or efficiency one.
 
 ## 4. Simplifications in the search itself
 

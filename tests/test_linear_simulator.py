@@ -50,6 +50,39 @@ def test_coast_end_of_travel_exits_past_the_last_coil():
     assert log.x[-1] > p.coils[-1].position_m
 
 
+def test_exit_plane_is_a_separate_interpolated_event_after_the_last_gate():
+    p, sup, log = run_default(t_end=1.5)
+    assert log.exit_t is not None
+    assert log.exit_v is not None and log.exit_v > 0.0
+    assert log.exit_position_m == p.resolved_exit_position_m
+    assert log.exit_t > log.gate_t[-1]
+
+
+def test_rl_energy_ledger_closes_to_within_one_percent():
+    p = LinearActuatorParams(current_loop="rl", bus_voltage_v=48.0,
+                             driver_bipolar=True)
+    est = LinearStepperEstimator([g.position_m for g in p.gates],
+                                 [g.w_eff for g in p.gates])
+    sup = StepperSupervisor(p, full_thrust=True)
+    log = LinearSimulator(p, est, sup, dt=2e-5, sample_every=10).run(
+        x0=-0.03, v0=0.0, v_tgt=None, t_end=1.5
+    )
+    assert log.bus_energy_j[-1] > 0.0
+    assert abs(log.energy_residual_j[-1]) / log.bus_energy_j[-1] < 0.01
+
+
+def test_configured_gate_dropout_is_not_silently_ignored():
+    p = LinearActuatorParams()
+    est = LinearStepperEstimator([g.position_m for g in p.gates],
+                                 [g.w_eff for g in p.gates])
+    sup = StepperSupervisor(p, bootstrap_dwell_s=0.01, bootstrap_timeout_s=0.02)
+    sim = LinearSimulator(p, est, sup, dt=2e-4, sample_every=10,
+                          gate_dropout_probability=[1.0] * len(p.gates))
+    log = sim.run(x0=-0.03, v0=0.0, v_tgt=0.5, t_end=0.5)
+    assert log.gate_t == []
+    assert est.have is False
+
+
 def test_brake_hold_reduces_overshoot_and_speed_versus_coast():
     """A single end-of-travel brake pulse -- the only station left to use for braking,
     with no further gate to correct against -- won't bring the slug to an exact stop the

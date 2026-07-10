@@ -18,6 +18,10 @@ to maximize slug exit speed, using a physically-grounded parametric model
 (turns and dimensions genuinely trade off against resistance/inductance/thrust,
 not just "more is better").
 
+Geometry-built linear coils use a winding-volume `K(x)` table reciprocally for PM force
+and back-EMF. Optimizer candidates must clear every gate and a separate physical exit
+plane; RL runs expose a bus/copper/field/mechanical energy ledger for numerical QA.
+
 The immediate goal is a configurable **virtual actuator lab**: define fictional
 pendulum/stepper, gate, coil, driver, and controller values in a TOML file, run
 the sim on a PC, inspect the plots/visualizer, and use the results to guide

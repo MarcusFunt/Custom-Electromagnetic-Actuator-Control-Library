@@ -60,7 +60,16 @@ def _station_k_pump(coil: CoilStation, pm_envelope: str = "rcos") -> tuple[float
     thrust per i_peak at the cost of sharper edges); see supervisor.envelope_average_linear."""
     q_win = _q_window_integral(coil.x_c, -coil.x_c, 0.0)
     k_quad = 0.5 * coil.Cmag * q_win                              # J per A^2
-    k_lin = envelope_average_linear(pm_envelope) * coil.k_a * q_win   # J per A
+    if coil.coupling_positions_m and coil.coupling_n_per_a:
+        # Integrate the actual winding-volume K(x) table over the approach side.
+        k_integral = 0.0
+        pairs = list(zip(coil.coupling_positions_m, coil.coupling_n_per_a))
+        for (x0, y0), (x1, y1) in zip(pairs, pairs[1:]):
+            if x1 <= 0.0:
+                k_integral += 0.5 * (abs(y0) + abs(y1)) * (x1 - x0)
+    else:
+        k_integral = coil.k_a * q_win
+    k_lin = envelope_average_linear(pm_envelope) * k_integral   # J per A
     return k_quad, k_lin
 
 
@@ -88,7 +97,7 @@ class StepperSupervisor:
     def __init__(self, p: LinearActuatorParams, k_v: float = 0.30, T_p_frac: float = 0.30,
                  phase_advance_s: float = 0.002, i_max: float = 6.0,
                  bootstrap_dwell_s: float = 0.05, bootstrap_timeout_s: float = 0.20,
-                 pm_envelope: str = "rcos"):
+                 pm_envelope: str = "rcos", full_thrust: bool = False):
         self.p = p
         self.k_v = k_v
         self.T_p_frac = T_p_frac
@@ -101,6 +110,7 @@ class StepperSupervisor:
         # average current per i_peak -- a genuine speed-vs-vibration knob). Reluctance-only
         # stations always use "sqrt_rcos" regardless -- see _station_k_pump.
         self.pm_envelope = pm_envelope
+        self.full_thrust = full_thrust
         self.K_pump = [_station_k_pump(c, pm_envelope) for c in p.coils]   # list of (k_quad, k_lin)
 
         self.mode = BOOTSTRAP
@@ -113,7 +123,7 @@ class StepperSupervisor:
         self._final_v_hat = 0.0         # speed measured at the last gate, for brake_hold sizing
         self._pending_departure = None  # (coil_index, t_arrival) -- next repel-departure to fire
         self._departure_est = None      # estimator reference, for predict()ing velocity at fire time
-        self._last_v_tgt = 0.0
+        self._last_v_tgt: float | None = None
 
     def start(self, t: float) -> None:
         """Call once before the run starts to arm the first bootstrap pulse."""
@@ -163,7 +173,7 @@ class StepperSupervisor:
         return self.active
 
     def on_gate(self, gate_index: int, est: LinearStepperEstimator, t: float,
-                v_tgt: float) -> StepperOutput:
+                v_tgt: float | None) -> StepperOutput:
         """Call right after a gate crossing is accepted by the estimator. gate[j] precedes
         coil[j] in this layout (see module docstring), so every gate -- including the last
         one -- targets a normal pump-and-cut of its own coil; end-of-travel is decided
@@ -235,14 +245,20 @@ class StepperSupervisor:
         _, k_lin = self.K_pump[coil_index]
         _, v_hat = self._departure_est.predict(t_arrival)
 
-        E_hat = 0.5 * self.p.mass_kg * v_hat * v_hat
-        E_tgt = 0.5 * self.p.mass_kg * self._last_v_tgt * self._last_v_tgt
-        dE_cmd = max(0.0, self.k_v * (E_tgt - E_hat))
+        if self.full_thrust:
+            dE_cmd = k_lin * self.i_max
+        else:
+            if self._last_v_tgt is None:
+                return StepperOutput(coil_index, _COAST)
+            E_hat = 0.5 * self.p.mass_kg * v_hat * v_hat
+            E_tgt = 0.5 * self.p.mass_kg * self._last_v_tgt * self._last_v_tgt
+            dE_cmd = max(0.0, self.k_v * (E_tgt - E_hat))
         if dE_cmd < 1e-9:
             return StepperOutput(coil_index, _COAST)
 
         T_p = coil.x_c / max(abs(v_hat), 1e-6)   # same lobe-traversal-time sizing as brake_hold
-        i_peak = _i_peak_for_energy(dE_cmd, 0.0, k_lin, self.i_max)
+        i_peak = (self.i_max if self.full_thrust
+                  else _i_peak_for_energy(dE_cmd, 0.0, k_lin, self.i_max))
         return StepperOutput(coil_index,
                               PulseCmd(True, "pump", t_arrival, t_arrival + T_p, T_p,
                                        i_peak, dE_cmd, self.pm_envelope, "repel"))
@@ -322,7 +338,7 @@ class StepperSupervisor:
         return t_arrival
 
     def _run_step(self, gate_index: int, est: LinearStepperEstimator, t: float,
-                  v_tgt: float) -> StepperOutput:
+                  v_tgt: float | None) -> StepperOutput:
         coil = self.p.coils[gate_index]
         if not est.have or abs(est.v_last) < 1e-9:
             return self.active     # not enough information yet; keep coasting
@@ -330,12 +346,17 @@ class StepperSupervisor:
         # Energy-shaping law (same shape as EnergySupervisor's, in kinetic-energy terms
         # rather than raw velocity, so it stays dimensionally consistent with K_pump's
         # J-per-A^2 definition): forward-only, so never command a negative (braking) dE here.
-        E_hat = 0.5 * self.p.mass_kg * est.v_last * est.v_last
-        E_tgt = 0.5 * self.p.mass_kg * v_tgt * v_tgt
-        dE_cmd = max(0.0, self.k_v * (E_tgt - E_hat))
-
         k_quad, k_lin = self.K_pump[gate_index]
-        i_peak = _i_peak_for_energy(dE_cmd, k_quad, k_lin, self.i_max)
+        if self.full_thrust:
+            i_peak = self.i_max
+            dE_cmd = k_quad * i_peak * i_peak + k_lin * i_peak
+        else:
+            if v_tgt is None:
+                return StepperOutput(gate_index, _COAST)
+            E_hat = 0.5 * self.p.mass_kg * est.v_last * est.v_last
+            E_tgt = 0.5 * self.p.mass_kg * v_tgt * v_tgt
+            dE_cmd = max(0.0, self.k_v * (E_tgt - E_hat))
+            i_peak = _i_peak_for_energy(dE_cmd, k_quad, k_lin, self.i_max)
         dE_deliverable = k_quad * i_peak * i_peak + k_lin * i_peak
 
         tau_elec = coil.inductance_h / coil.resistance_ohm if coil.resistance_ohm > 0.0 else None
@@ -346,9 +367,17 @@ class StepperSupervisor:
         if dE_cmd < 1e-9:
             return StepperOutput(gate_index, PulseCmd(False, "coast", 0.0, 0.0, 0.0, 0.0, 0.0))
 
-        T_p = self.T_p_frac * max(t_arrival - t, 1e-6)
-        t1 = max(t, t_arrival - self.phase_advance_s)
-        t0 = t1 - T_p
+        T_p_requested = self.T_p_frac * max(t_arrival - t, 1e-6)
+        t1 = t_arrival - self.phase_advance_s
+        # A command created by this gate event cannot act before the event.  If
+        # phase advance consumes the entire remaining approach, explicitly coast
+        # rather than returning a pulse whose useful area lies in the past.
+        if t1 <= t + 1e-12:
+            return StepperOutput(gate_index, _COAST)
+        T_p = min(T_p_requested, t1 - t)
+        if T_p <= 1e-12:
+            return StepperOutput(gate_index, _COAST)
+        t0 = max(t, t1 - T_p)
         envelope = self.pm_envelope if k_lin > 1e-15 else "sqrt_rcos"
         return StepperOutput(gate_index,
                               PulseCmd(True, "pump", t0, t1, T_p, i_peak, dE_cmd, envelope))

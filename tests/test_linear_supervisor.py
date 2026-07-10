@@ -330,3 +330,26 @@ def test_departure_repel_is_not_scheduled_for_a_pure_reluctance_coil():
     sup.on_gate(0, est, 0.0, v_tgt=1.0)
 
     assert sup._pending_departure is None
+
+
+def test_high_speed_gate_event_never_creates_a_pulse_in_the_past():
+    p = LinearActuatorParams()
+    sup = StepperSupervisor(p, phase_advance_s=0.002, full_thrust=True)
+    est = make_estimator(p)
+    event_t = 1.0
+    est.on_gate(0, t=event_t, pulse_width=p.gates[0].w_eff / 20.0)
+    out = sup._run_step(0, est, event_t, v_tgt=None)
+    assert not out.cmd.active or out.cmd.t0 >= event_t
+    if out.cmd.active:
+        assert out.cmd.t1 > out.cmd.t0
+
+
+def test_full_thrust_mode_commands_i_max_without_a_velocity_sentinel():
+    p = LinearActuatorParams()
+    sup = StepperSupervisor(p, phase_advance_s=0.0, i_max=7.0, full_thrust=True)
+    est = make_estimator(p)
+    est.on_gate(0, t=0.0, pulse_width=p.gates[0].w_eff / 150.0)
+    out = sup._run_step(0, est, 0.0, v_tgt=None)
+    assert out.cmd.active
+    assert out.cmd.i_peak == pytest.approx(7.0)
+    assert out.cmd.t0 >= 0.0

@@ -98,8 +98,9 @@ def test_simulate_design_detailed_returns_full_time_series_and_matches_exit_spee
     assert detail["fault"] is False
     assert len(detail["t"]) == len(detail["x"]) == len(detail["v"])
     assert len(detail["t"]) <= 50 + 1     # downsampled, small overshoot from the floor div is fine
-    if detail["gate_t"]:
-        assert detail["exit_speed_m_s"] == pytest.approx(detail["gate_v"][-1])
+    if detail["exit_t"] is not None:
+        assert detail["exit_speed_m_s"] > 0.0
+        assert detail["exit_t"] > detail["gate_t"][-1]
     else:
         assert detail["exit_speed_m_s"] == 0.0
 

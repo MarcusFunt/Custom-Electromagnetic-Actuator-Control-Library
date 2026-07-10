@@ -71,3 +71,10 @@ def test_target_segments_are_sorted_and_used():
 
     assert [segment.t_s for segment in config.target_segments] == [0.0, 5.0]
     assert [segment.amplitude_rad for segment in config.target_segments] == [0.30, 0.10]
+
+
+def test_unsupported_pendulum_geometry_and_removed_driver_fields_are_rejected():
+    with pytest.raises(ValueError, match="gate.angle_rad"):
+        parse_config({"gate": {"angle_rad": 0.1}})
+    with pytest.raises(ValueError, match="driver"):
+        parse_config({"driver": {"bus_voltage_v": 24.0}})

@@ -46,7 +46,12 @@ def run_scenario(t_end: float | None = None, config: SimulationConfig | None = N
         i_max=config.primary_coil.max_current_a,
         eps_frac=config.controller.hold_deadband_fraction,
     )
-    sim = Simulator(p, est, sup, dt=config.dt_s, sample_every=config.sample_every)
+    sim = Simulator(
+        p, est, sup, dt=config.dt_s, sample_every=config.sample_every,
+        gate_noise_std_s=config.primary_gate.noise_std_s,
+        gate_dropout_probability=config.primary_gate.dropout_probability,
+        random_seed=config.random_seed,
+    )
     target_E = make_target(p, config)
     log = sim.run(
         theta0=config.pendulum.initial_angle_rad,
