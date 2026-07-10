@@ -34,6 +34,7 @@ from . import linear_plant
 from .linear_estimator import LinearStepperEstimator
 from .linear_plant import LinearActuatorParams
 from .linear_supervisor import StepperSupervisor
+from .numerics import hermite_event_fraction
 from .supervisor import current_at
 
 
@@ -114,15 +115,13 @@ class LinearSimulator:
             # in the same tick would be silently skipped forever (x has already moved
             # past it by the next iteration, so `x < x_gate` then reads false), stalling
             # the whole rest of the run's gate sequence. Every crossing this tick is
-            # interpolated against the same (x, x_n) bracket -- the same constant-
-            # velocity-within-the-tick approximation a single check already made, just
-            # applied per gate instead of only the first.
+            # interpolated against the same (x, x_n) bracket.  The interpolation is now a
+            # cubic Hermite segment using both endpoint velocities, which is more accurate
+            # than the old constant-velocity-within-the-tick approximation.
             while next_gate < n_gates and x < p.gates[next_gate].position_m <= x_n:
                 x_gate = p.gates[next_gate].position_m
-                denom = x_n - x
-                frac = (x_gate - x) / denom if denom != 0.0 else 0.0
+                frac, v_cross = hermite_event_fraction(x, v, x_n, v_n, self.dt, y_event=x_gate)
                 t_cross = t + frac * self.dt
-                v_cross = v + frac * (v_n - v)
                 if abs(v_cross) <= 1e-6:
                     break   # too slow to trust this crossing; retry the same gate next tick
                 pulse_width = p.gates[next_gate].w_eff / abs(v_cross)
