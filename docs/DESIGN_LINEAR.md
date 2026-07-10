@@ -293,23 +293,29 @@ also gets a departure-side repel kick once dead-reckoning says its center has be
 (section 2.1) -- reluctance-only stations remain attract-only in both directions, since
 attraction can't be signed regardless of current.
 
-**The center-crossing prediction is accel-corrected, not naive dead reckoning.**
-`StepperSupervisor._predict_arrival` (called by both `_run_step`'s pump cutoff and the
-departure-kick scheduling above) estimates the crossing time using a SUVAT constant-
-acceleration average velocity, `(v0 + v1) / 2`, where `v1` comes from energy conservation
-on the energy this pulse is actually about to deliver -- not `LinearStepperEstimator`'s
-own plain constant-velocity `time_to_reach()`. A strong pump measurably accelerates the
-slug *during* the very approach it's predicting the timing of, so a constant-velocity
-guess systematically predicts arrival too late; the stale cutoff then leaves the coil
-still energized once the slug has already crossed its center, where the same "attract"
-current pulls backward instead (`q_shape`'s sign has flipped) -- enough to fully reverse
-a high-thrust design at a coarse simulation `dt`. The correction's own energy assumption is
-in turn capped at the slug's current kinetic energy (at most doubling it in one lobe pass)
--- an uncapped correction can still overshoot the other way for a light, high-current
-design, predicting arrival implausibly early and firing the departure kick too soon. See
-`docs/DESIGN_OPTIMIZER.md` sections 1.2 and 1.3 for both failure modes and why the
-correction has to use the energy *actually deliverable* at the current-limited `i_peak`,
-not the raw commanded energy.
+**The approach pump's cutoff is accel-corrected; the departure kick deliberately isn't --
+these two need opposite-direction estimates, not one shared "more accurate" one.**
+`StepperSupervisor._predict_arrival` (used only by `_run_step`'s own pump cutoff) estimates
+the crossing time using a SUVAT constant-acceleration average velocity, `(v0 + v1) / 2`,
+where `v1` comes from energy conservation on the energy this pulse is actually about to
+deliver, further throttled by whether the resulting pump window leaves the coil's own `L/R`
+electrical time constant enough time to actually reach that current -- not
+`LinearStepperEstimator`'s own plain constant-velocity `time_to_reach()`. A strong pump
+measurably accelerates the slug *during* the very approach it's predicting the timing of,
+so a constant-velocity guess systematically predicts arrival too late; a late cutoff then
+leaves the coil still energized once the slug has already crossed its center, where the
+same "attract" current pulls backward instead (`q_shape`'s sign has flipped) -- enough to
+fully reverse a high-thrust design.
+
+The departure-repel kick and end-of-travel's kick (`on_gate`'s scheduling), in contrast,
+use PLAIN naive `time_to_reach()` -- not `_predict_arrival` -- on purpose. Four separate
+incidents (see `docs/DESIGN_OPTIMIZER.md` section 1.3 for the full history) all traced back
+to reusing the approach pump's aggressive, early-biased correction for these too: a kick
+that must not fire before the slug truly arrives needs the OPPOSITE bias from a cutoff that
+must not fire after -- naive dead reckoning's systematic lateness, the very reason the
+approach-pump correction exists, is exactly the safe direction for a kick instead. The
+tradeoff is some lost repel-assist (firing a little after the ideal instant) in exchange for
+never firing early.
 
 **Startup is structurally easier than the pendulum's.** `DESIGN.md` section 4.6: a
 soft-iron pendulum bob *always* rests at bottom-center (gravity puts it there), which is

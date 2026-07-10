@@ -114,7 +114,6 @@ class StepperSupervisor:
         self._pending_departure = None  # (coil_index, t_arrival) -- next repel-departure to fire
         self._departure_est = None      # estimator reference, for predict()ing velocity at fire time
         self._last_v_tgt = 0.0
-        self._last_arrival_estimate = None   # set by _run_step when it actually schedules a pump
 
     def start(self, t: float) -> None:
         """Call once before the run starts to arm the first bootstrap pulse."""
@@ -176,32 +175,45 @@ class StepperSupervisor:
             return self.active
 
         self._last_v_tgt = v_tgt
-        self._last_arrival_estimate = None
         self.active = self._run_step(gate_index, est, t, v_tgt)
 
         # Schedule this SAME coil's departure-repel kick (PM branch only -- reluctance
         # can't repel) for once dead-reckoning says its center has been reached, which is
         # after the approach pump above has already cut. Not for the last coil:
-        # _end_of_travel below owns what happens once that one's center is reached. Reuse
-        # _run_step's own (accel-corrected, see _predict_arrival) arrival estimate rather
-        # than recomputing naively -- falls back to the plain dead-reckoned time_to_reach
-        # only if _run_step didn't just schedule a pump (coast / not-enough-info cases).
+        # _end_of_travel below owns what happens once that one's center is reached.
+        #
+        # Deliberately uses PLAIN, naive dead reckoning here (est.time_to_reach), NOT
+        # _run_step's accel-corrected _predict_arrival estimate, even though that estimate
+        # is what schedules the approach pump's own cutoff just above. The two timings
+        # have OPPOSITE safe-failure directions: the approach pump must not run PAST
+        # center (a late estimate is the danger -- _predict_arrival's correction exists
+        # precisely to prevent that), while the departure kick must not fire BEFORE
+        # center (an early estimate is the danger here). Reusing the same aggressive,
+        # early-biased correction for both was the root cause of two separate incidents
+        # this session: an unbounded correction firing the departure kick while still
+        # approaching, and a kinetic-energy-based cap that "fixed" that by throttling the
+        # SAME correction the approach pump also needed, breaking a bootstrap-acceleration
+        # design instead. Naive dead reckoning systematically OVER-estimates transit time
+        # (the whole reason the approach-pump correction was needed in the first place),
+        # which is exactly the safe direction here: the departure kick may fire a little
+        # later than the ideal instant (some lost repel-assist), but never before the slug
+        # has actually arrived.
         if gate_index < len(self.p.coils) - 1:
             _, k_lin = self.K_pump[gate_index]
             if k_lin > 1e-15:
                 coil = self.p.coils[gate_index]
-                t_arrival = self._last_arrival_estimate
-                if t_arrival is None:
-                    t_arrival = est.time_to_reach(coil.position_m)
+                t_arrival = est.time_to_reach(coil.position_m)
                 if t_arrival is not None:
                     self._pending_departure = (gate_index, t_arrival)
                     self._departure_est = est
 
         if gate_index == len(self.p.coils) - 1:
             last_coil = self.p.coils[-1]
-            self._final_arrival = self._last_arrival_estimate
-            if self._final_arrival is None:
-                self._final_arrival = est.time_to_reach(last_coil.position_m)
+            # Same reasoning as the departure kick above: end-of-travel's repel/brake
+            # kick must not fire before the slug truly reaches the last coil, so this
+            # uses naive dead reckoning too, not the approach-pump's own early-biased
+            # correction.
+            self._final_arrival = est.time_to_reach(last_coil.position_m)
             self._final_v_hat = est.v_last
             # Window width matched to how long the slug actually spends inside the departure
             # lobe (one x_c of travel at the measured speed) -- NOT T_p_frac * inter-station
@@ -236,7 +248,7 @@ class StepperSupervisor:
                                        i_peak, dE_cmd, self.pm_envelope, "repel"))
 
     def _predict_arrival(self, est: LinearStepperEstimator, x_target: float,
-                          dE_cmd: float):
+                          dE_cmd: float, tau_elec: float = None):
         """Predicted time the slug reaches x_target, correcting plain constant-velocity
         dead reckoning (est.time_to_reach) for the accel a pulse of dE_cmd joules is about
         to add before it gets there. Constant-velocity extrapolation from the last gate's
@@ -256,33 +268,58 @@ class StepperSupervisor:
         departure-repel kick while still approaching -- caught in testing right after fixing
         the late-cutoff case).
 
-        dE_cmd is further capped at the slug's OWN current kinetic energy (at most doubling
-        it over one lobe transit) before it enters the correction. Even the deliverable-
-        energy fix above can still overshoot badly for a light slug / high-current design:
-        K_pump's energy-per-A(^2) calibration assumes a full lobe-spanning pulse, but the
-        resulting T_p (sized from THIS SAME corrected t_arrival, a circular dependency) can
-        end up far too short for the RL current loop to ever actually reach, let alone hold,
-        that much current -- so the assumed dE is never really delivered, yet the schedule
-        still trusted it, predicting an arrival many multiples of v0 that never happens and
-        firing the departure kick while genuinely still approaching (caught via a second,
-        independent design after the first fix: 79.5 m/s reported at the search's own dt,
-        4.3 m/s once dt was refined -- one lobe pass assumed to inject 16x the slug's
-        existing kinetic energy). A same-order-of-magnitude energy injection is a much
-        safer, still physically meaningful bound for a single-lobe SUVAT extrapolation to
-        stay inside."""
+        Even the deliverable-energy fix above can still overshoot badly for a light slug /
+        high-current design: K_pump's energy-per-A(^2) calibration assumes a full lobe-
+        spanning pulse, but the resulting T_p (sized FROM this same corrected t_arrival, a
+        circular dependency) can end up far too short for the RL current loop to ever
+        actually reach, let alone hold, that much current -- so the assumed dE is never
+        really delivered, yet the schedule still trusted it. An EARLIER version of this fix
+        capped dE at the slug's own current kinetic energy (at most doubling it per lobe
+        pass) to guard against exactly this -- but that bound conflates two unrelated
+        physical scales: it also throttles the (perfectly legitimate, and the MOST common)
+        case of a slug accelerating from near rest, where a strong first pump is SUPPOSED
+        to inject many multiples of the slug's current, near-zero kinetic energy. Capping
+        by that ratio broke that case, reverting most of the way back to the original
+        late-cutoff bug (caught via a design whose i_max_a x pump_envelope sensitivity
+        showed an unexplained cliff -- rcos collapsing to ~1.2 m/s at high current when
+        square/trapezoid kept climbing -- that traced back to exactly this).
+
+        The right question isn't "how big is dE relative to current KE" -- it's "does the
+        coil ELECTRICALLY have time to reach the current this assumes", via tau_elec (the
+        coil's own L/R time constant, passed in by the caller). Iterates a small fixed-point
+        loop: predict t_arrival from the current energy assumption, size the implied T_p
+        from it, then discount the assumed energy by the RC-style charge fraction
+        (1 - exp(-T_p/tau_elec)) that fraction of a pulse could actually deliver, and
+        re-predict -- converges in a few steps, and leaves a bootstrap-from-rest pump
+        (long available T_p relative to tau_elec) essentially undiscounted, while still
+        throttling a design whose commanded pulse would need to be electrically
+        instantaneous to work as assumed."""
         if not est.have or abs(est.v_last) < 1e-9:
             return None
         v0 = est.v_last
-        e0 = 0.5 * self.p.mass_kg * v0 * v0
-        dE_for_correction = min(dE_cmd, e0)
-        if dE_for_correction > 1e-12:
-            v1 = math.sqrt(v0 * v0 + 2.0 * dE_for_correction / self.p.mass_kg)
-            v_eff = 0.5 * (v0 + v1)
-        else:
-            v_eff = v0
-        if abs(v_eff) < 1e-9:
-            return None
-        return est.t_last + (x_target - est.x_last) / v_eff
+        dE_cmd = max(0.0, dE_cmd)
+        dE = dE_cmd
+        t_arrival = None
+        for _ in range(6):
+            if dE > 1e-12:
+                v1 = math.sqrt(v0 * v0 + 2.0 * dE / self.p.mass_kg)
+                v_eff = 0.5 * (v0 + v1)
+            else:
+                v_eff = v0
+            if abs(v_eff) < 1e-9:
+                return None
+            t_arrival = est.t_last + (x_target - est.x_last) / v_eff
+            if tau_elec is None or tau_elec <= 0.0 or t_arrival <= est.t_last:
+                break
+            transit = t_arrival - est.t_last
+            t_p = self.T_p_frac * transit
+            deliverable_frac = max(0.02, min(1.0, 1.0 - math.exp(-t_p / tau_elec)))
+            new_dE = dE_cmd * deliverable_frac
+            if abs(new_dE - dE) < 1e-9 * max(dE_cmd, 1.0):
+                dE = new_dE
+                break
+            dE = new_dE
+        return t_arrival
 
     def _run_step(self, gate_index: int, est: LinearStepperEstimator, t: float,
                   v_tgt: float) -> StepperOutput:
@@ -301,7 +338,8 @@ class StepperSupervisor:
         i_peak = _i_peak_for_energy(dE_cmd, k_quad, k_lin, self.i_max)
         dE_deliverable = k_quad * i_peak * i_peak + k_lin * i_peak
 
-        t_arrival = self._predict_arrival(est, coil.position_m, dE_deliverable)
+        tau_elec = coil.inductance_h / coil.resistance_ohm if coil.resistance_ohm > 0.0 else None
+        t_arrival = self._predict_arrival(est, coil.position_m, dE_deliverable, tau_elec)
         if t_arrival is None or t_arrival <= t:
             return self.active     # not enough information yet; keep coasting
 
@@ -312,7 +350,6 @@ class StepperSupervisor:
         t1 = max(t, t_arrival - self.phase_advance_s)
         t0 = t1 - T_p
         envelope = self.pm_envelope if k_lin > 1e-15 else "sqrt_rcos"
-        self._last_arrival_estimate = t_arrival
         return StepperOutput(gate_index,
                               PulseCmd(True, "pump", t0, t1, T_p, i_peak, dE_cmd, envelope))
 

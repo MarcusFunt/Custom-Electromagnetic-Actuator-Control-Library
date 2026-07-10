@@ -79,39 +79,106 @@ def test_run_step_schedules_pump_ending_at_predicted_coil_arrival():
 
     # Arrival time is corrected for the accel THIS pulse itself delivers (see
     # StepperSupervisor._predict_arrival) -- not plain constant-velocity dead reckoning --
-    # so recompute it from the pulse's own actually-deliverable energy, the same way
-    # _run_step does, rather than asserting against est.time_to_reach() directly.
+    # so recompute it from the pulse's own actually-deliverable energy and the coil's own
+    # electrical time constant, the same way _run_step does, rather than asserting
+    # against est.time_to_reach() directly.
     k_quad, k_lin = sup.K_pump[0]
     dE_deliverable = k_quad * out.cmd.i_peak ** 2 + k_lin * out.cmd.i_peak
-    t_arrival = sup._predict_arrival(est, p.coils[0].position_m, dE_deliverable)
+    coil = p.coils[0]
+    tau_elec = coil.inductance_h / coil.resistance_ohm
+    t_arrival = sup._predict_arrival(est, p.coils[0].position_m, dE_deliverable, tau_elec)
     assert out.coil_index == 0
     assert out.cmd.kind == "pump"
     assert out.cmd.t1 == pytest.approx(max(0.0, t_arrival - sup.phase_advance_s))
 
 
-def test_predict_arrival_caps_the_assumed_energy_at_the_slugs_own_kinetic_energy():
-    """A second, independent dt-instability failure caught after the deliverable-energy
-    fix above: for a light slug, even the actually-deliverable energy can still be many
-    times the slug's current kinetic energy (K_pump's calibration assumes a full lobe-
-    spanning pulse, which the resulting short T_p may not leave enough time to actually
-    deliver -- see the module docstring). Predicting arrival from an unbounded energy
-    assumption can put it absurdly early, firing the departure-repel kick while the slug
-    is still well before the coil. Capping the energy used in the correction at the
-    slug's own current KE (at most doubling it in one lobe pass) should make the
-    prediction insensitive to further increases in the commanded energy beyond that cap."""
+def test_predict_arrival_without_tau_elec_applies_the_full_energy_correction():
+    """With no tau_elec given (the caller doesn't know the coil's electrical time
+    constant), the correction should behave exactly as the plain SUVAT estimate --
+    no throttling at all, regardless of how large dE_cmd is relative to current KE.
+    (A KE-based cap used to sit here; it was removed after it broke the bootstrap-
+    acceleration case below -- see _predict_arrival's docstring.)"""
     p = LinearActuatorParams(mass_kg=0.01563)
     sup = StepperSupervisor(p)
     est = make_estimator(p)
     est.on_gate(0, t=0.0, pulse_width=p.gates[0].w_eff / 4.334)   # v0 = 4.334 m/s
 
     e0 = 0.5 * p.mass_kg * 4.334 * 4.334
-    t_at_cap = sup._predict_arrival(est, p.coils[0].position_m, e0)
-    t_far_beyond_cap = sup._predict_arrival(est, p.coils[0].position_m, 16.0 * e0)
-    t_naive = est.time_to_reach(p.coils[0].position_m)
+    dE = 16.0 * e0
+    v0 = 4.334
+    v1 = math.sqrt(v0 * v0 + 2.0 * dE / p.mass_kg)
+    v_eff = 0.5 * (v0 + v1)
+    expected = est.t_last + (p.coils[0].position_m - est.x_last) / v_eff
 
-    assert t_at_cap == pytest.approx(t_far_beyond_cap)     # capped: no further effect
-    assert t_at_cap > 0.0
-    assert t_at_cap < t_naive     # still corrects toward an earlier arrival than naive
+    t_uncorrected = sup._predict_arrival(est, p.coils[0].position_m, dE)
+    assert t_uncorrected == pytest.approx(expected)
+
+
+def test_predict_arrival_with_tau_elec_barely_throttles_a_bootstrap_acceleration_pump():
+    """The case that broke the old KE-based cap: a slug near rest (tiny current KE)
+    about to receive a strong first pump that legitimately injects many multiples of
+    that KE. Because the resulting transit is long relative to a normal coil's
+    electrical time constant, the coil has plenty of time to actually reach the
+    assumed current -- so the correction should barely be throttled at all, staying
+    close to the naive dead-reckoned prediction's opposite extreme (much earlier
+    than plain constant-velocity dead reckoning, not clamped back toward it)."""
+    p = LinearActuatorParams(mass_kg=0.01563)
+    sup = StepperSupervisor(p)
+    est = make_estimator(p)
+    est.on_gate(0, t=0.0, pulse_width=p.gates[0].w_eff / 1.19)   # v0 = 1.19 m/s, near rest
+
+    e0 = 0.5 * p.mass_kg * 1.19 * 1.19
+    dE = 205.0 * e0    # matches the ratio observed in the design that exposed this
+    tau_elec = 0.0005036452313737064   # a real coil's L/R from this session's diagnosis
+
+    t_corrected = sup._predict_arrival(est, p.coils[0].position_m, dE, tau_elec)
+    t_naive = est.time_to_reach(p.coils[0].position_m)
+    assert t_corrected < 0.7 * t_naive     # a real, large correction -- not clamped away
+
+
+def test_predict_arrival_with_tau_elec_throttles_an_electrically_infeasible_pump():
+    """The opposite regime: an assumed energy injection so large, over so short a
+    transit, that the coil's own electrical time constant genuinely can't keep up
+    (T_p ends up only a fraction of tau_elec). The correction should throttle back
+    toward the naive prediction rather than trusting energy that could never really
+    be delivered that fast."""
+    p = LinearActuatorParams(mass_kg=0.01563)
+    sup = StepperSupervisor(p)
+    est = make_estimator(p)
+    est.on_gate(0, t=0.0, pulse_width=p.gates[0].w_eff / 4.334)   # v0 = 4.334 m/s
+
+    e0 = 0.5 * p.mass_kg * 4.334 * 4.334
+    dE = 16.0 * e0
+    tau_elec_huge = 1.0   # an implausibly slow coil -- T_p can never keep up
+
+    t_throttled = sup._predict_arrival(est, p.coils[0].position_m, dE, tau_elec_huge)
+    t_unthrottled = sup._predict_arrival(est, p.coils[0].position_m, dE)   # tau_elec=None
+    t_naive = est.time_to_reach(p.coils[0].position_m)
+    assert t_naive > t_throttled > t_unthrottled
+
+
+def test_final_arrival_uses_naive_dead_reckoning_not_the_aggressive_correction():
+    """Same architectural guard as the departure kick's, for the last coil: end-of-travel
+    must not fire before the slug truly reaches it, so _final_arrival is naive
+    est.time_to_reach(), not _run_step's aggressive _predict_arrival."""
+    p = LinearActuatorParams()
+    sup = StepperSupervisor(p)
+    sup.start(0.0)
+    est = make_estimator(p)
+
+    t = 0.0
+    for idx in range(len(p.gates) - 1):
+        t += 0.01
+        est.on_gate(idx, t=t, pulse_width=0.008)
+        sup.on_gate(idx, est, t, v_tgt=1.0)
+
+    last = len(p.gates) - 1
+    t += 0.01
+    est.on_gate(last, t=t, pulse_width=0.008)
+    sup.on_gate(last, est, t, v_tgt=1.0)
+
+    t_naive = est.time_to_reach(p.coils[-1].position_m)
+    assert sup._final_arrival == pytest.approx(t_naive)
 
 
 def test_coast_end_of_travel_stops_after_last_coil():
@@ -198,6 +265,28 @@ def test_station_k_pump_linear_term_scales_with_envelope_average():
     _, k_lin_square = _station_k_pump(coil, pm_envelope="square")
     expected_ratio = envelope_average_linear("square") / envelope_average_linear("rcos")
     assert k_lin_square / k_lin_rcos == pytest.approx(expected_ratio)
+
+
+def test_pending_departure_uses_naive_dead_reckoning_not_the_aggressive_correction():
+    """Architectural regression guard, not just a numeric one: the departure kick's
+    schedule must come from est.time_to_reach() (naive, systematically LATE), never from
+    _run_step's own accel-corrected _predict_arrival (aggressive, systematically EARLY) --
+    reusing the latter for both was the root cause of four separate incidents this session
+    (see docs/DESIGN_OPTIMIZER.md section 1.3). A late-biased schedule can only ever fire
+    the departure kick after true arrival, never before; an early-biased one can fire it
+    while the slug is still genuinely approaching, turning "repel" into a brake."""
+    p = LinearActuatorParams()
+    sup = StepperSupervisor(p)
+    sup.start(0.0)
+    est = make_estimator(p)
+    est.on_gate(0, t=0.0, pulse_width=0.008)   # v = 0.5 m/s
+
+    sup.on_gate(0, est, 0.0, v_tgt=1.0)
+    assert sup._pending_departure is not None
+    _, t_arrival_scheduled = sup._pending_departure
+
+    t_naive = est.time_to_reach(p.coils[0].position_m)
+    assert t_arrival_scheduled == pytest.approx(t_naive)
 
 
 def test_departure_repel_is_scheduled_and_fires_after_the_approach_pump_cuts():

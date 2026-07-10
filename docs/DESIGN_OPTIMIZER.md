@@ -164,38 +164,71 @@ against the design that exposed it: all 8 gates now fire, with closely-convergin
 speeds, across `dt` from `2e-5` to `1e-3` (previously only the entry gate fired at any
 `dt` >= `5e-4`, with the slug rocketing backward out of the tube afterward).
 
-### 1.3 A third refinement: capping the correction's own energy assumption
+### 1.3 A third and fourth attempt, both wrong, before the actual root cause
 
-The deliverable-energy fix above wasn't the end of it: a fresh search under the (separately
-merged) velocity-Verlet integrator turned up a design -- light slug, 20 coils, high current
-and turns -- whose *reported* speed (79.5 m/s at the search's own `dt`) collapsed to 4.3 m/s
-under a dt-refinement check, the same red flag that caught 1.1 and 1.2. Root cause was the
-same `_predict_arrival` correction overshooting in the SAME direction as 1.2 (arrival
-predicted too early, departure kick firing while still approaching) but for a subtler
-reason: `_i_peak_for_energy`'s deliverable energy is still computed from `K_pump`'s
-calibration, which assumes a full lobe-spanning pulse -- it doesn't account for the fact
-that the resulting `T_p` (sized FROM this same corrected `t_arrival`, a circular dependency)
-can end up too short for the RL current loop to ever actually reach, let alone hold, that
-current. For that specific design, the deliverable-energy estimate was **16x the slug's own
-current kinetic energy** -- an implausible one-lobe energy injection that was never really
-delivered, yet the schedule trusted it anyway.
+The deliverable-energy fix above wasn't the end of it -- two more attempts at patching
+`_predict_arrival` followed, and **both of them were themselves bugs**, not fixes, each
+caught by re-verifying every previously-fixed design after making the change (a discipline
+this section exists to argue for doing every time, not just when something looks wrong).
 
-The fix: cap the energy the correction is allowed to assume at the slug's own current
-kinetic energy (`dE_for_correction = min(dE_deliverable, 0.5*mass*v0^2)`) -- at most
-doubling it over one lobe transit, a much safer bound for a single-lobe SUVAT
-extrapolation to stay inside. Re-verified against both the design that exposed this and the
-original 1.2 design: both now converge cleanly across `dt` from `2e-4` down to `5e-6` (the
-new design settles to ~77-79 m/s; the original, unaffected by this cap in practice, stays at
-~16.2-16.5 m/s as before).
+**Attempt 3 (wrong): cap the assumed energy at the slug's current kinetic energy.** A
+fresh search turned up a design -- light slug, 20 coils, high current -- whose reported
+79.5 m/s collapsed to 4.3 m/s under dt-refinement, traced to `_predict_arrival` assuming
+16x the slug's own kinetic energy would be delivered in one lobe pass (implausible, since
+`K_pump`'s calibration assumes a full lobe-spanning pulse that the resulting short `T_p`
+couldn't actually sustain). The fix applied at the time capped the correction's energy at
+the slug's own current KE. It re-verified clean against the two designs known at the time.
+**It was still wrong**: it also throttled the single most common and legitimate case in
+this whole model -- a slug accelerating from near rest, where a strong first pump is
+*supposed* to inject many multiples of the slug's (near-zero) kinetic energy. This surfaced
+as an unexplained cliff in a sensitivity sweep (`rcos` collapsing to ~1.2 m/s at high
+current while `trapezoid`/`square` kept climbing on the SAME baseline design) -- caught only
+because a direct question ("why would raising current make it worse -- isn't that a bug?")
+prompted tracing the actual trajectory instead of accepting the sweep at face value.
 
-**The general lesson, stated once:** any one-shot correction to an estimator's prediction
-that itself depends on an energy/impulse assumption needs a plausibility bound, not just a
-better formula -- an unbounded correction can always find some corner of an 11-dimensional
-search space where its own assumption breaks down. The `optimize()` high-fidelity
-re-verification step (section 4) is what keeps surfacing these; treat any large gap between
-`search_reported` and the re-verified `speed` in an `optimize_result*.json` as a prompt to
-dt-refine that specific design before trusting it, not just this project's history of three
-strikes.
+**Attempt 4 (also wrong): throttle by electrical feasibility instead of kinetic energy.**
+The right-sounding fix: iterate the correction, checking whether the resulting pump window
+`T_p` leaves the coil's own `L/R` time constant enough time to actually reach the assumed
+current (discounting by `1 - exp(-T_p/tau_elec)` when it doesn't). This fixed the `rcos`
+cliff AND both earlier designs -- and **broke the project's actual best-known design**
+(~98 m/s), collapsing it to ~6 m/s. Re-verifying every previously-fixed design after a
+"fix" is what caught this one; without that check it would have shipped.
+
+**The actual root cause: one shared estimate was being asked to be safe in two opposite
+directions at once.** `_predict_arrival`'s corrected arrival time feeds TWO different
+decisions with OPPOSITE failure directions:
+- the approach pump's own cutoff (`_run_step`) must not fire *late* -- lingering past
+  center flips `q_shape`'s sign and turns the same attract current into a brake (the
+  original 1.1/1.2 bug);
+- the departure-repel kick and end-of-travel's kick (`on_gate`'s scheduling) must not fire
+  *early* -- firing while genuinely still approaching turns "repel" into a brake instead
+  (1.2's second symptom, 1.3, and 1.4, all really the same failure wearing different hats).
+
+Every attempt so far tried to find ONE correction accurate enough to be safe both ways.
+There isn't one: any correction aggressive enough to reliably beat the late-cutoff failure
+is, by the same aggressiveness, liable to occasionally predict too early for the departure
+kick, in some corner of an 11-dimensional design space. **The actual fix is architectural,
+not numerical**: stop sharing the estimate. `_run_step`'s own cutoff keeps the full
+accel-corrected `_predict_arrival` (aggressive, early-biased -- exactly what the approach
+pump needs). `on_gate`'s departure-kick and end-of-travel scheduling now use PLAIN, naive
+constant-velocity dead reckoning (`est.time_to_reach`) instead -- which systematically
+predicts arrival LATE (the whole reason the approach-pump correction was needed in the
+first place), the safe direction for a kick that must never fire before the slug truly
+arrives. The cost is a little lost repel-assist (the kick fires somewhat after the ideal
+instant); the benefit is that it can no longer fire while still approaching, in any design.
+
+Re-verified against all four designs this investigation touched, at `dt` from `2e-4` down
+to `5e-6`: the original 1.1/1.2 design (~16.3-16.7 m/s), the attempt-3 design (~76.3-76.9
+m/s), the current best design (~98.4-98.9 m/s, matching its pre-regression numbers), and
+the `rcos`-cliff design (~66-72 m/s, no more cliff) all converge cleanly.
+
+**The general lesson:** when a single quantity feeds two decisions, check whether they
+actually need the same accuracy/direction of error before reusing it -- "more accurate" is
+not automatically "safer" if the two consumers are wrong in opposite directions. The
+`optimize()` high-fidelity re-verification step (section 4) and re-checking every
+previously-fixed design after every subsequent change are what caught all four of these;
+treat any large gap between `search_reported` and the re-verified `speed` in an
+`optimize_result*.json` as a prompt to dt-refine that specific design before trusting it.
 
 ## 2. The eleven knobs
 
