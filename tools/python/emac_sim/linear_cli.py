@@ -33,12 +33,18 @@ def run_scenario(t_end: float | None = None, config: LinearSimulationConfig | No
         bootstrap_dwell_s=config.controller.bootstrap_dwell_s,
         bootstrap_timeout_s=config.controller.bootstrap_timeout_s,
         pm_envelope=config.controller.pump_envelope,
+        full_thrust=config.controller.full_thrust,
     )
-    sim = LinearSimulator(p, est, sup, dt=config.dt_s, sample_every=config.sample_every)
+    sim = LinearSimulator(
+        p, est, sup, dt=config.dt_s, sample_every=config.sample_every,
+        gate_noise_std_s=[g.noise_std_s for g in config.gates],
+        gate_dropout_probability=[g.dropout_probability for g in config.gates],
+        random_seed=config.random_seed,
+    )
     log = sim.run(
         x0=config.actuator.initial_position_m,
         v0=config.actuator.initial_velocity_m_s,
-        v_tgt=config.controller.target_velocity_m_s,
+        v_tgt=None if config.controller.full_thrust else config.controller.target_velocity_m_s,
         t_end=config.duration_s if t_end is None else t_end,
     )
     return p, sup, log
@@ -72,6 +78,15 @@ def report_outcome(sup: StepperSupervisor, log) -> None:
     print(f"\nsupervisor final mode: {sup.mode}")
     if log.x:
         print(f"final position: {log.x[-1]:.4f} m, final velocity: {log.v[-1]:.4f} m/s")
+    if log.exit_t is not None:
+        print(f"physical exit: t={log.exit_t:.6f} s, velocity={log.exit_v:.4f} m/s, "
+              f"x={log.exit_position_m:.4f} m")
+    if log.bus_energy_j and log.bus_energy_j[-1] != 0.0:
+        residual_pct = 100.0 * log.energy_residual_j[-1] / log.bus_energy_j[-1]
+        print(f"energy ledger: bus={log.bus_energy_j[-1]:.4f} J, "
+              f"copper={log.copper_loss_j[-1]:.4f} J, "
+              f"mechanical={log.mechanical_em_work_j[-1]:.4f} J, "
+              f"residual={residual_pct:.3f}%")
     if sup.mode == FAULT:
         print("FAULT: bootstrap exhausted every station with no gate response "
               "(no slug in the tube, or it's jammed).")

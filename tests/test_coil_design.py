@@ -177,6 +177,18 @@ def test_build_coil_station_carries_through_the_geometry_derived_thermal_mass():
     assert coil.thermal_mass_j_per_k == pytest.approx(expected)
 
 
+def test_axial_coil_length_changes_volume_integrated_coupling():
+    common = dict(position_m=0.0, turns=200, radial_thickness_m=0.01,
+                  magnet_radius_m=0.008, magnet_length_m=0.02, remanence_t=1.2)
+    short = build_coil_station(coil_length_m=0.005, **common)
+    long = build_coil_station(coil_length_m=0.08, **common)
+    assert short.coupling_positions_m
+    assert len(short.coupling_positions_m) == len(short.coupling_n_per_a)
+    assert short.k_a > long.k_a
+    assert short.x_c < long.x_c
+    assert short.coupling_n_per_a[len(short.coupling_n_per_a) // 2] == pytest.approx(0.0)
+
+
 def test_off_axis_field_matches_on_axis_formula_in_the_rho_to_zero_limit():
     """off_axis_field_cylinder_magnet is a more general (and more expensive) calculation
     that should reduce EXACTLY to on_axis_field_cylinder_magnet's closed form as rho->0 --

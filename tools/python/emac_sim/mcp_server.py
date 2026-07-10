@@ -276,17 +276,22 @@ def simulate_design_detailed(
     x0 = -0.5 * pitch - 0.001
     est = LinearStepperEstimator([g.position_m for g in p.gates], [g.w_eff for g in p.gates])
     sup = StepperSupervisor(p, i_max=dk.i_max_a, pm_envelope=dk.pump_envelope,
-                             bootstrap_timeout_s=bootstrap_timeout_s)
+                             bootstrap_timeout_s=bootstrap_timeout_s, full_thrust=True)
     expected_steps = max(1, int(t_end / dt))
     sample_every = max(1, expected_steps // max_samples)
     sim = LinearSimulator(p, est, sup, dt=dt, sample_every=sample_every)
-    log = sim.run(x0=x0, v0=0.0, v_tgt=optimize_design.V_TGT_FULL_THRUST, t_end=t_end)
+    log = sim.run(x0=x0, v0=0.0, v_tgt=None, t_end=t_end)
     return {
         "fault": sup.mode == FAULT,
         "t": log.t, "x": log.x, "v": log.v,
         "active_current": log.active_current, "active_temperature_c": log.active_temperature_c,
         "gate_t": log.gate_t, "gate_v": log.gate_v, "gate_index": log.gate_index,
-        "exit_speed_m_s": log.gate_v[-1] if log.gate_t else 0.0,
+        "exit_t": log.exit_t, "exit_position_m": log.exit_position_m,
+        "exit_speed_m_s": log.exit_v if log.exit_v is not None else 0.0,
+        "bus_energy_j": log.bus_energy_j, "copper_loss_j": log.copper_loss_j,
+        "magnetic_energy_j": log.magnetic_energy_j,
+        "mechanical_em_work_j": log.mechanical_em_work_j,
+        "energy_residual_j": log.energy_residual_j,
         "knobs": _knobs_dict(dk),
     }
 

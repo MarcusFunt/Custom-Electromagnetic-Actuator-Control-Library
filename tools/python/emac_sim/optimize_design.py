@@ -14,9 +14,9 @@ Knobs (11 total, mixed continuous/integer/categorical):
     (rcos/trapezoid/square), n_coils, turns, coil_length_m, radial_thickness_m,
     magnet_radius_m, magnet_length_m, remanence_t, i_max_a.
 
-The objective is always "exit speed with the velocity governor effectively disabled"
-(v_tgt set far above anything achievable) -- this is a pure speed-maximization search, not
-a tracking/efficiency one. FAULTed or stalled designs score 0.0, and any design whose total
+The objective uses an explicit full-thrust controller mode -- no finite velocity sentinel
+can accidentally throttle a fast candidate. This is a pure speed-maximization search, not
+a tracking/efficiency one. Incomplete, FAULTed or stalled designs score 0.0, and any design whose total
 tube length (n_coils * coil_length_m) exceeds `Bounds.max_tube_length_m` is rejected the
 same way -- both push the search away from that region rather than crashing it.
 
@@ -37,7 +37,8 @@ back-to-back, only self-heating within one).
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, replace
 from typing import Sequence
 
 from scipy.optimize import differential_evolution
@@ -49,7 +50,6 @@ from .linear_sim import LinearSimulator
 from .linear_supervisor import FAULT, StepperSupervisor
 
 PUMP_ENVELOPES = ("rcos", "trapezoid", "square")
-V_TGT_FULL_THRUST = 100.0   # m/s -- unreachable, so the velocity governor never throttles back
 
 
 @dataclass(frozen=True)
@@ -124,14 +124,14 @@ def build_params(knobs: DesignKnobs) -> LinearActuatorParams:
     edge-to-edge (pitch == coil_length_m, no inter-coil gap) -- a simplification, real
     builds need some clearance/former thickness between windings."""
     pitch = knobs.coil_length_m
-    coils = tuple(
-        coil_design.build_coil_station(
-            position_m=k * pitch, turns=knobs.turns, coil_length_m=knobs.coil_length_m,
-            radial_thickness_m=knobs.radial_thickness_m, magnet_radius_m=knobs.magnet_radius_m,
-            magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
-        )
-        for k in range(knobs.n_coils)
+    # Every station shares one winding geometry.  Build its expensive winding-volume
+    # coupling table once, then relocate the immutable station template.
+    coil_template = coil_design.build_coil_station(
+        position_m=0.0, turns=knobs.turns, coil_length_m=knobs.coil_length_m,
+        radial_thickness_m=knobs.radial_thickness_m, magnet_radius_m=knobs.magnet_radius_m,
+        magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
     )
+    coils = tuple(replace(coil_template, position_m=k * pitch) for k in range(knobs.n_coils))
     gate_positions = [-0.5 * pitch] + [(k + 0.5) * pitch for k in range(knobs.n_coils - 1)]
     gates = tuple(GateStation(position_m=x, w_eff=0.002) for x in gate_positions)
     return LinearActuatorParams(
@@ -150,9 +150,8 @@ def build_params(knobs: DesignKnobs) -> LinearActuatorParams:
 
 def simulate_design(knobs: DesignKnobs, dt: float = 2e-4, t_end: float = 3.0,
                      bootstrap_timeout_s: float = 0.05) -> float:
-    """Exit speed (m/s) at the last gate, or 0.0 if the run FAULTed or never cleared a
-    single gate (an infeasible or too-weak design) -- pushes the search away from that
-    region the same way an explicit penalty would, without a separate constraint mechanism.
+    """Speed (m/s) at the physical exit plane, or 0.0 unless every ordered gate and
+    the exit plane were crossed (an infeasible, stalled or too-weak design).
     `bootstrap_timeout_s` defaults short (vs. StepperSupervisor's own 0.20s) so hopeless
     candidates fail fast during a large search; pass the default back in for a final,
     more patient verification run."""
@@ -160,13 +159,23 @@ def simulate_design(knobs: DesignKnobs, dt: float = 2e-4, t_end: float = 3.0,
     pitch = knobs.coil_length_m
     x0 = -0.5 * pitch - 0.001
     est = LinearStepperEstimator([g.position_m for g in p.gates], [g.w_eff for g in p.gates])
-    sup = StepperSupervisor(p, i_max=knobs.i_max_a, pm_envelope=knobs.pump_envelope,
-                            bootstrap_timeout_s=bootstrap_timeout_s)
+    sup = StepperSupervisor(
+        p, i_max=knobs.i_max_a, pm_envelope=knobs.pump_envelope,
+        bootstrap_timeout_s=bootstrap_timeout_s, full_thrust=True,
+    )
     sim = LinearSimulator(p, est, sup, dt=dt, sample_every=1_000_000)
-    log = sim.run(x0=x0, v0=0.0, v_tgt=V_TGT_FULL_THRUST, t_end=t_end)
-    if sup.mode == FAULT or not log.gate_t:
+    log = sim.run(x0=x0, v0=0.0, v_tgt=None, t_end=t_end)
+    completed = (
+        sup.mode != FAULT
+        and est.cleared_last_gate()
+        and len(log.gate_t) == len(p.gates)
+        and log.exit_v is not None
+        and math.isfinite(log.exit_v)
+        and log.exit_v > 0.0
+    )
+    if not completed:
         return 0.0
-    return log.gate_v[-1]
+    return log.exit_v
 
 
 def _objective(x: Sequence[float], bounds: Bounds, dt: float, t_end: float) -> float:

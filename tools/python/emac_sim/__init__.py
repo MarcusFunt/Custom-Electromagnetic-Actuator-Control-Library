@@ -37,7 +37,11 @@ from .numerics import hermite_event_fraction
 from .supervisor import EnergySupervisor, PulseCmd, current_at, envelope_average_linear
 from .sim import Simulator, SimLog
 
-from .linear_plant import LinearActuatorParams, CoilStation, GateStation, coil_current_step, undamped_accel
+from .linear_plant import (
+    LinearActuatorParams, CoilStation, GateStation, ElectricalStep,
+    coil_current_step, coil_electrical_step, pm_coupling_n_per_a,
+    pm_back_emf_v, undamped_accel,
+)
 from .linear_estimator import LinearStepperEstimator
 from .linear_supervisor import StepperSupervisor, StepperOutput
 from .linear_sim import LinearSimulator, LinearSimLog
@@ -47,7 +51,9 @@ __all__ = [
     "conservative_alpha", "rl_current_step", "hermite_event_fraction",
     "Tier1Estimator", "EnergySupervisor", "PulseCmd", "current_at", "envelope_average_linear",
     "Simulator", "SimLog",
-    "LinearActuatorParams", "CoilStation", "GateStation", "coil_current_step", "undamped_accel",
+    "LinearActuatorParams", "CoilStation", "GateStation", "ElectricalStep",
+    "coil_current_step", "coil_electrical_step", "pm_coupling_n_per_a",
+    "pm_back_emf_v", "undamped_accel",
     "LinearStepperEstimator", "StepperSupervisor", "StepperOutput",
     "LinearSimulator", "LinearSimLog",
 ]

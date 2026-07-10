@@ -5,6 +5,7 @@ from emac_sim.linear_plant import (
     CoilStation,
     GateStation,
     LinearActuatorParams,
+    coil_electrical_step,
     coil_current_step,
     coil_resistance,
     coil_temperature_step,
@@ -12,8 +13,32 @@ from emac_sim.linear_plant import (
     default_gate_stations,
     kinetic_energy,
     net_force,
+    pm_back_emf_v,
+    pm_coupling_n_per_a,
     step,
 )
+
+
+def test_pm_force_and_back_emf_use_the_same_reciprocal_k_x_table():
+    coil = CoilStation(
+        position_m=0.0, Cmag=0.0, k_a=2.0,
+        coupling_positions_m=(-1.0, 0.0, 1.0),
+        coupling_n_per_a=(2.0, 0.0, -2.0),
+    )
+    p = LinearActuatorParams(coils=(coil,), gates=(GateStation(-0.5),), damping_n_per_mps=0.0)
+    k_x = pm_coupling_n_per_a(-0.5, coil)
+    assert net_force(-0.5, [3.0], p) == pytest.approx(k_x * 3.0)
+    assert pm_back_emf_v(-0.5, 4.0, coil) == pytest.approx(k_x * 4.0)
+
+
+def test_back_emf_reduces_rail_limited_current_and_electrical_ledger_closes():
+    coil = CoilStation(position_m=0.0, resistance_ohm=1.0, inductance_h=0.01)
+    no_emf = coil_electrical_step(0.0, 20.0, coil, 12.0, 1e-3,
+                                  bipolar=True, back_emf_v=0.0)
+    with_emf = coil_electrical_step(0.0, 20.0, coil, 12.0, 1e-3,
+                                    bipolar=True, back_emf_v=5.0)
+    assert with_emf.current_a < no_emf.current_a
+    assert abs(with_emf.residual_j) < 1e-12
 
 
 def default_params(**overrides) -> LinearActuatorParams:

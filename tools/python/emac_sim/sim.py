@@ -9,6 +9,7 @@ boundary from plant to controller -- this is the event-first architecture in min
 
 from __future__ import annotations
 import math
+import random
 from dataclasses import dataclass, field
 from typing import Callable, List
 from . import plant
@@ -41,12 +42,18 @@ class SimLog:
 
 class Simulator:
     def __init__(self, p: PendulumParams, est: Tier1Estimator,
-                 sup: EnergySupervisor, dt: float = 2e-4, sample_every: int = 10):
+                 sup: EnergySupervisor, dt: float = 2e-4, sample_every: int = 10,
+                 gate_noise_std_s: float = 0.0,
+                 gate_dropout_probability: float = 0.0,
+                 random_seed: int = 0):
         self.p = p
         self.est = est
         self.sup = sup
         self.dt = dt
         self.sample_every = sample_every
+        self.gate_noise_std_s = gate_noise_std_s
+        self.gate_dropout_probability = gate_dropout_probability
+        self.rng = random.Random(random_seed)
 
     def run(self, theta0: float, omega0: float,
             target_E: Callable[[float], float], t_end: float) -> SimLog:
@@ -81,21 +88,27 @@ class Simulator:
                     accepted = True
                     last_cross_t = t_cross
                     pw = p.dalpha / v                      # synthetic beam-block width
-                    est.on_crossing(t_cross, pw, pulsed=pulsed_since_cx)
-                    E_tgt = target_E(t_cross)
-                    sched = sup.plan(est, E_tgt)
-                    E_cross = plant.energy(0.0, omega_cross, p)
+                    dropped = self.rng.random() < self.gate_dropout_probability
+                    if not dropped:
+                        measured_t = t_cross + self.rng.gauss(0.0, self.gate_noise_std_s)
+                        measured_pw = max(
+                            1e-9, pw + self.rng.gauss(0.0, self.gate_noise_std_s)
+                        )
+                        est.on_crossing(measured_t, measured_pw, pulsed=pulsed_since_cx)
+                        E_tgt = target_E(measured_t)
+                        sched = sup.plan(est, E_tgt)
+                        E_cross = plant.energy(0.0, omega_cross, p)
 
-                    # log this crossing (the swing that just ended peaked at peak_since_cx)
-                    log.cx_t.append(t_cross)
-                    log.cx_A_peak.append(peak_since_cx)
-                    log.cx_A_energy.append(plant.amplitude_from_energy(E_cross, p))
-                    log.cx_A_est.append(est.amplitude())
-                    log.cx_E_true.append(E_cross)
-                    log.cx_E_est.append(est.energy())
-                    log.cx_A_tgt.append(plant.amplitude_from_energy(E_tgt, p))
-                    log.cx_kind.append(sched.kind)
-                    log.cx_ipeak.append(sched.i_peak)
+                        # log the accepted sensor event; true-energy fields remain truth data.
+                        log.cx_t.append(measured_t)
+                        log.cx_A_peak.append(peak_since_cx)
+                        log.cx_A_energy.append(plant.amplitude_from_energy(E_cross, p))
+                        log.cx_A_est.append(est.amplitude())
+                        log.cx_E_true.append(E_cross)
+                        log.cx_E_est.append(est.energy())
+                        log.cx_A_tgt.append(plant.amplitude_from_energy(E_tgt, p))
+                        log.cx_kind.append(sched.kind)
+                        log.cx_ipeak.append(sched.i_peak)
                 if accepted:
                     peak_since_cx = 0.0
                     pulsed_since_cx = False

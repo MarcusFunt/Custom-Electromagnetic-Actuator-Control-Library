@@ -28,13 +28,6 @@ def config_summary(config: SimulationConfig, source: str | None = None) -> dict:
             "c_mag_nm_per_a2": config.primary_coil.c_mag_nm_per_a2,
             "i_sat_a": config.primary_coil.i_sat_a,
             "max_current_a": config.primary_coil.max_current_a,
-            "resistance_ohm": config.primary_coil.resistance_ohm,
-            "inductance_h": config.primary_coil.inductance_h,
-        },
-        "driver": {
-            "bus_voltage_v": config.driver.bus_voltage_v,
-            "pwm_frequency_hz": config.driver.pwm_frequency_hz,
-            "current_loop": config.driver.current_loop,
         },
         "controller": {
             "kind": config.controller.kind,
@@ -47,6 +40,7 @@ def config_summary(config: SimulationConfig, source: str | None = None) -> dict:
             "duration_s": config.duration_s,
             "dt_s": config.dt_s,
             "sample_every": config.sample_every,
+            "random_seed": config.random_seed,
         },
         "targets": [
             {"t_s": segment.t_s, "amplitude_rad": segment.amplitude_rad}
@@ -69,9 +63,12 @@ def linear_config_summary(config: LinearSimulationConfig, source: str | None = N
             "pressure_bias_n": config.actuator.pressure_bias_n,
             "thermal_model": config.actuator.thermal_model,
             "ambient_temperature_c": config.actuator.ambient_temperature_c,
+            "exit_position_m": config.actuator.exit_position_m,
         },
         "gates": [
-            {"position_m": g.position_m, "effective_width_m": g.effective_width_m}
+            {"position_m": g.position_m, "effective_width_m": g.effective_width_m,
+             "noise_std_s": g.noise_std_s,
+             "dropout_probability": g.dropout_probability}
             for g in config.gates
         ],
         "coils": [
@@ -80,7 +77,6 @@ def linear_config_summary(config: LinearSimulationConfig, source: str | None = N
                 "x_c_m": c.x_c_m,
                 "c_mag_n_per_a2": c.c_mag_n_per_a2,
                 "i_sat_a": c.i_sat_a,
-                "max_current_a": c.max_current_a,
                 "k_a_n_per_a": c.k_a_n_per_a,
                 "resistance_ohm": c.resistance_ohm,
                 "inductance_h": c.inductance_h,
@@ -91,8 +87,8 @@ def linear_config_summary(config: LinearSimulationConfig, source: str | None = N
         ],
         "driver": {
             "bus_voltage_v": config.driver.bus_voltage_v,
-            "pwm_frequency_hz": config.driver.pwm_frequency_hz,
             "current_loop": config.driver.current_loop,
+            "bipolar": config.driver.bipolar,
         },
         "controller": {
             "kind": config.controller.kind,
@@ -100,10 +96,12 @@ def linear_config_summary(config: LinearSimulationConfig, source: str | None = N
             "k_velocity": config.controller.k_velocity,
             "pulse_width_half_period_fraction": config.controller.pulse_width_half_period_fraction,
             "phase_advance_s": config.controller.phase_advance_s,
+            "full_thrust": config.controller.full_thrust,
         },
         "sim": {
             "duration_s": config.duration_s,
             "dt_s": config.dt_s,
             "sample_every": config.sample_every,
+            "random_seed": config.random_seed,
         },
     }

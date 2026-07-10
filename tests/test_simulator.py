@@ -3,6 +3,7 @@ import math
 import pytest
 
 from emac_sim.cli import run_scenario, steady_state_rms_error
+from emac_sim.config import parse_config
 
 
 def test_phase0_scenario_tracks_all_hold_targets_under_two_percent():
@@ -35,3 +36,10 @@ def test_simulator_logs_have_consistent_lengths():
     assert len(log.cx_ipeak) == crossing_len
 
     assert all(math.isfinite(x) for x in log.cx_A_energy)
+
+
+def test_pendulum_gate_dropout_configuration_affects_sensor_events():
+    config = parse_config({"gate": {"dropout_probability": 1.0},
+                           "sim": {"duration_s": 2.0, "random_seed": 1}})
+    _, log = run_scenario(config=config)
+    assert log.cx_t == []

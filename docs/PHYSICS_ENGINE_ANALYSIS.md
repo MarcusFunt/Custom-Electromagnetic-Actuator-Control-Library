@@ -5,6 +5,12 @@ upgrade implemented in this branch.
 
 ## Scope of the current engine
 
+> **2026-07 correctness update:** geometry-built linear coils now use a winding-volume-
+> integrated position table `K(x)` for the PM branch. The same table is used reciprocally
+> for `F=K(x)i` and `e_back=K(x)v`; RL simulations expose a cumulative bus/copper/field/
+> mechanical energy ledger. Optimizer success now requires every gate plus a separate
+> physical exit-plane crossing, and full-thrust search is an explicit controller mode.
+
 The repository currently has two concrete plant families rather than a single inherited
 engine:
 
@@ -105,10 +111,10 @@ interpolation.
 1. **Fitted force-map tables.** Replace `q_shape()` with a calibrated table supporting
    interpolation and optional derivative lookup.  Start with a static `q(theta)`/`q(x)` table
    per coil, then add current-dependent saturation if measured data requires it.
-2. **Coupled electrical/mechanical back-EMF.** For a moving permanent-magnet slug, the coil
-   voltage equation should eventually include speed-dependent induced voltage.  The current
-   state already exists in `linear_sim.py`, so this can be added without changing the
-   high-level supervisor API.
+2. **Coupled electrical/mechanical back-EMF -- implemented for the PM branch.** The RL
+   voltage equation includes `e_back=K(x)v`, using the same winding-volume table that
+   produces `F=K(x)i`. The remaining extension is a co-energy/position-dependent-inductance
+   model for nonzero reluctance (`Cmag`) designs.
 3. **Adaptive or event-aligned substepping.** For offline reference runs, optionally cut a
    mechanical step exactly at predicted sensor events and pulse boundary times.  That would
    reduce small timing errors in controller/plant interaction without changing firmware-like

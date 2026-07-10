@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 from scipy import integrate
 from scipy.special import ellipe, ellipk
@@ -234,6 +235,75 @@ def estimate_k_a(turns: int, mean_radius_m: float, magnet_radius_m: float,
     return abs(b_peak) * wire_length_m
 
 
+@lru_cache(maxsize=512)
+def winding_volume_coupling_table(
+    turns: int,
+    coil_length_m: float,
+    radial_thickness_m: float,
+    bore_radius_m: float,
+    magnet_radius_m: float,
+    magnet_length_m: float,
+    remanence_t: float,
+    n_axial_cells: int = 5,
+    n_radial_cells: int = 3,
+    n_positions: int = 61,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Integrate the PM motor constant over the complete winding volume.
+
+    Turns are distributed uniformly over the winding's axial/radial cross-section.
+    For each slug-to-coil displacement, every cell contributes
+    ``B_rho(r,z) * conductor_length * turns_in_cell``.  This captures the axial
+    cancellation and radial field variation that a single mean-radius sample misses.
+    The returned K(x) table is reciprocal: N/A for force and V/(m/s) for back-EMF.
+    """
+    if min(turns, n_axial_cells, n_radial_cells, n_positions) <= 0:
+        raise ValueError("turns and coupling-table resolutions must be positive")
+    if n_positions < 3:
+        raise ValueError("n_positions must be at least 3")
+    if min(coil_length_m, radial_thickness_m, bore_radius_m,
+           magnet_radius_m, magnet_length_m, remanence_t) <= 0.0:
+        raise ValueError("winding and magnet dimensions/material values must be positive")
+
+    half_coil = 0.5 * coil_length_m
+    # Wide enough that the omitted tail is negligible for commutation and scoring.
+    span = half_coil + 2.0 * magnet_length_m + 2.0 * magnet_radius_m
+    positions = tuple(-span + 2.0 * span * k / (n_positions - 1)
+                      for k in range(n_positions))
+    turns_per_cell = turns / (n_axial_cells * n_radial_cells)
+    axial_cells = tuple(-half_coil + (j + 0.5) * coil_length_m / n_axial_cells
+                        for j in range(n_axial_cells))
+    radial_cells = tuple(bore_radius_m + (j + 0.5) * radial_thickness_m / n_radial_cells
+                         for j in range(n_radial_cells))
+
+    coupling = []
+    for displacement in positions:
+        k_total = 0.0
+        for radius in radial_cells:
+            conductor_length = 2.0 * math.pi * radius
+            for axial_offset in axial_cells:
+                # Field point is a winding cell relative to the magnet center.  A
+                # positive field-point z gives a positive reaction force on a slug
+                # lying behind the coil, matching linear_plant's sign convention.
+                z_relative = axial_offset - displacement
+                b_rho = off_axis_radial_field_cylinder_magnet(
+                    radius, z_relative, magnet_radius_m, magnet_length_m, remanence_t
+                )
+                k_total += b_rho * conductor_length * turns_per_cell
+        coupling.append(k_total)
+
+    # Numerical quadrature should be odd for symmetric geometry.  Enforce the
+    # reciprocity symmetry explicitly to remove tiny integration noise at x=0.
+    values = list(coupling)
+    for lo in range(len(values) // 2):
+        hi = len(values) - 1 - lo
+        odd_value = 0.5 * (values[lo] - values[hi])
+        values[lo] = odd_value
+        values[hi] = -odd_value
+    if len(values) % 2:
+        values[len(values) // 2] = 0.0
+    return positions, tuple(values)
+
+
 def build_coil_station(position_m: float, turns: int, coil_length_m: float,
                         radial_thickness_m: float, magnet_radius_m: float,
                         magnet_length_m: float, remanence_t: float,
@@ -248,12 +318,16 @@ def build_coil_station(position_m: float, turns: int, coil_length_m: float,
     bore_radius_m = magnet_radius_m + bore_clearance_m
     winding = wind_coil(turns, coil_length_m, radial_thickness_m, bore_radius_m,
                         packing_factor=packing_factor, temperature_c=temperature_c)
-    peak_offset_m, b_peak = _peak_radial_coupling(winding.mean_radius_m, magnet_radius_m,
-                                                   magnet_length_m, remanence_t)
-    wire_length_m = turns * 2.0 * math.pi * winding.mean_radius_m
-    k_a = abs(b_peak) * wire_length_m
-    x_c = peak_offset_m
+    coupling_positions, coupling_values = winding_volume_coupling_table(
+        turns, coil_length_m, radial_thickness_m, bore_radius_m,
+        magnet_radius_m, magnet_length_m, remanence_t,
+    )
+    peak_index = max(range(len(coupling_values)), key=lambda k: abs(coupling_values[k]))
+    k_a = abs(coupling_values[peak_index])
+    x_c = abs(coupling_positions[peak_index])
     return CoilStation(position_m=position_m, x_c=x_c, Cmag=0.0, k_a=k_a,
                        resistance_ohm=winding.resistance_ohm,
                        inductance_h=winding.inductance_h,
-                       thermal_mass_j_per_k=winding.thermal_mass_j_per_k)
+                       thermal_mass_j_per_k=winding.thermal_mass_j_per_k,
+                       coupling_positions_m=coupling_positions,
+                       coupling_n_per_a=coupling_values)

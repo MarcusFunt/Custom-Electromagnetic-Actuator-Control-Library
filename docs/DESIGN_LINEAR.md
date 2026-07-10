@@ -36,7 +36,7 @@ tube-canvas animation is **not yet built** (see section 6). Coil electrical dyna
 
 | Primitive | Status |
 |---|---|
-| `q_shape(u, half_width)` -- odd, zero-at-center coupling lobe | **Reused verbatim, for BOTH force terms below.** A coil's axial pull on a coaxial ferromagnetic/PM slug is the same law as the pendulum's bottom-coil torque, just evaluated per-station. The reluctance and PM mechanisms could in principle have different spatial coupling profiles; there's no calibration data yet to justify separating them, so both share one `q_shape` anchor per coil. |
+| `q_shape(u, half_width)` -- odd, zero-at-center coupling lobe | Reused for the reluctance placeholder and hand-authored legacy PM configs. Geometry-built optimizer coils carry a winding-volume-integrated `K(x)` table instead. |
 | `f_current(i, coil)` -- attract-only quadratic-with-saturation (reluctance branch) | **Reused verbatim**, unchanged signature. `CoilStation` exposes `.Cmag`/`.i_sat` so it satisfies `f_current`'s duck-typed contract as-is. `Cmag` defaults to 0.0 (no iron in the current slug) but the term stays available for a hybrid/iron-only slug. |
 | `f_current_pm(i, k_a)` -- linear and SIGNED (PM branch, `docs/DESIGN.md` 3.3) | **New, added to `plant.py` as a shared primitive** (not linear-stepper-specific) since the pendulum's own design doc already anticipates a PM-bob branch. With `Cmag=0.0`, this is the ONLY force term. `k_a` is a placeholder pending real calibration. |
 | `PulseCmd` / `current_at(t, cmd)` -- time-windowed raised-cosine current envelope | **Reused verbatim** from `supervisor.py`. Already coordinate-free; now a TARGET for the current loop under `"rl"` rather than the literal current (section 2.3). |
@@ -60,13 +60,15 @@ for pendulum-vs-ring, applied here to pendulum-vs-linear-stepper.
 
 ```
 m * x_ddot = -c_visc * x_dot
-             + sum_k[ q_shape(x - x_coil_k, x_c_k) * (f_current(i_k) + f_current_pm(i_k, k_a_k)) ]
+             + sum_k[ q_shape(x - x_coil_k, x_c_k) * f_current(i_k)
+                      + K_k(x - x_coil_k) * i_k ]
 ```
 
 The direct degenerate limit of the pendulum ODE: drop the `-m*g*L*sin(theta)` gravity
 term (the tube is assumed horizontal -- gravity is not the restoring mechanism here),
 replace angular inertia with mass, and sum the same per-coil odd lobe across N stations
-instead of evaluating one lobe at the bottom. At most one station is normally energized
+instead of evaluating one lobe at the bottom. For geometry-built PM coils, the reciprocal
+electrical term is `e_back,k = K_k(x) * x_dot`. At most one station is normally energized
 at a time in this implementation (sequential-only; no blended cross-coil handoff yet --
 see section 6).
 
@@ -140,7 +142,8 @@ over an exit boundary because the harder, more novel problem here is bootstrap d
 kick produced real motion. The cost: end-of-travel (clearing the last coil) must be
 *inferred* by dead-reckoning forward from the last gate, not sensed directly (section 5).
 
-**Consequence for the supervisor:** because gate[j] always precedes coil[j] in this
+The simulator separately detects a physical exit plane beyond the final coil lobe;
+optimizer completion requires every gate and that exit event. **Consequence for the supervisor:** because gate[j] always precedes coil[j] in this
 layout, "which coil to target" is just "the coil with the same index as the gate that
 just fired" -- no separate gate-to-coil lookup table is needed. A different placement
 scheme would need one.
@@ -159,7 +162,7 @@ fixed, current-independent L (no B-H saturation to shrink it, unlike an iron-cor
 so a plain first-order RL model is a good fit:
 
 ```
-L * di/dt = v_applied - i * R
+L * di/dt = v_applied - i * R - K(x) * x_dot
 ```
 
 `plant.rl_current_step(i, v_applied, r, l, dt)` is the EXACT closed-form update for this
@@ -181,6 +184,11 @@ when it isn't, applying the rail limit for the whole step is the correctly rail-
 response. `driver_bipolar=False` still means a negative target can't actually be reached
 (same as before) -- repel-pumping (section 2.1) needs `driver_bipolar=True` to take
 effect under `"rl"`.
+
+`linear_sim.LinearSimLog` records cumulative bus input, copper loss, magnetic-field
+energy, mechanical electromagnetic work, and their residual. This makes reciprocity and
+integration error testable rather than merely assumed; pure-PM reference runs are held to
+a sub-percent energy-balance regression threshold.
 
 This replaced an earlier two-state (full-on/full-off) bang-bang model, which chattered
 around the target under normal conditions but broke down outright for a real corner of
