@@ -22,6 +22,15 @@ than a whole coupling half-width (x_c) in one nominal tick and skip clean over a
 force lobe. run() subdivides the mechanical integration (holding currents fixed across the
 sub-steps -- they evolve on a slower timescale than this failure mode) whenever that would
 happen, so the requested dt is a resolution ceiling, not a silent accuracy cliff.
+
+Per-coil winding TEMPERATURE is likewise genuine integrated state, off by default:
+`p.thermal_model == True` tracks each coil's own temperature from its i^2*R dissipation
+(linear_plant.coil_temperature_step, an exact one-node thermal model -- same exponential-
+relaxation shape as the RL circuit above) and feeds the resulting temperature-adjusted
+resistance (coil_resistance()) back into "rl" mode's electrical dynamics, so a design that
+only looks fast because it never pays a heating penalty stops looking that way. False (the
+default) pins every coil at `ambient_temperature_c` forever, exactly reproducing the prior
+fixed-resistance behavior.
 """
 
 from __future__ import annotations
@@ -44,6 +53,7 @@ class LinearSimLog:
     v: List[float] = field(default_factory=list)
     active_coil: List[int] = field(default_factory=list)
     active_current: List[float] = field(default_factory=list)
+    active_temperature_c: List[float] = field(default_factory=list)
     x_est: List[float] = field(default_factory=list)
     status: List[str] = field(default_factory=list)
     # per-gate records
@@ -74,18 +84,31 @@ class LinearSimulator:
         next_gate = 0
         step_idx = 0
         currents = [0.0] * n_coils    # persistent per-coil electrical state under "rl"
+        # Persistent per-coil winding temperature -- stays pinned at ambient (i.e. this
+        # array is created but never advanced past its initial value) unless
+        # p.thermal_model is True, so the default behavior is bit-for-bit the old
+        # fixed-resistance model.
+        temperatures = [p.ambient_temperature_c] * n_coils
         min_x_c = min((c.x_c for c in p.coils), default=1.0)
 
         while t < t_end:
             out = sup.tick(t)
             i_target = current_at(t, out.cmd)
 
+            # Resistance at each coil's CURRENT temperature, computed once per tick and
+            # reused for both the electrical step below (if "rl") and the thermal step's
+            # own i^2*R dissipation -- keeping the two consistent with what the coil
+            # actually saw this tick rather than two independent estimates of it.
+            resistances = ([linear_plant.coil_resistance(p.coils[k], temperatures[k])
+                            for k in range(n_coils)] if p.thermal_model else None)
+
             if p.current_loop == "rl":
                 for k in range(n_coils):
                     target_k = i_target if k == out.coil_index else 0.0
+                    r_override = resistances[k] if resistances is not None else None
                     currents[k] = linear_plant.coil_current_step(
                         currents[k], target_k, p.coils[k], p.bus_voltage_v, self.dt,
-                        bipolar=p.driver_bipolar,
+                        bipolar=p.driver_bipolar, resistance_ohm_override=r_override,
                     )
             else:
                 currents = [0.0] * n_coils
@@ -94,6 +117,13 @@ class LinearSimulator:
                     if not p.driver_bipolar and i_val < 0.0:
                         i_val = 0.0     # single-ended driver: no negative rail even under "ideal"
                     currents[out.coil_index] = i_val
+
+            if resistances is not None:
+                for k in range(n_coils):
+                    temperatures[k] = linear_plant.coil_temperature_step(
+                        temperatures[k], currents[k], resistances[k], p.coils[k],
+                        p.ambient_temperature_c, self.dt,
+                    )
 
             i_active = currents[out.coil_index] if 0 <= out.coil_index < n_coils else 0.0
 
@@ -144,6 +174,9 @@ class LinearSimulator:
                 log.v.append(v)
                 log.active_coil.append(out.coil_index)
                 log.active_current.append(i_active)
+                t_active = (temperatures[out.coil_index] if 0 <= out.coil_index < n_coils
+                            else p.ambient_temperature_c)
+                log.active_temperature_c.append(t_active)
                 x_e, _ = est.predict(t)
                 log.x_est.append(x_e)
                 log.status.append(est.status)

@@ -90,25 +90,38 @@ for the pendulum ("Is the bob a permanent magnet or soft iron?"):
 the reluctance term vanish for every current, not a special code path. `k_a` (the PM
 gain) is a placeholder pending real calibration, like every other constant in this model.
 
-**What this does and doesn't unlock.** The physics layer (`linear_plant.net_force`)
-already computes the correct signed force for a negative current -- see
-`tests/test_linear_plant.py`'s PM-branch tests. But `StepperSupervisor`'s commutation
-logic and `supervisor.current_at()`'s raised-cosine shaping still only ever schedule
-`i_peak >= 0` (unipolar, single-FET-style current sourcing, matching the reference
-driver) -- so even though the WHOLE actuator is now bidirectional in principle, nothing
-yet drives it that way. Exploiting repel/regen would need: (a) `PulseCmd`/`current_at` to
-support a signed envelope or an explicit polarity field (mirroring `docs/DESIGN.md`'s
-`polarity_t {ATTRACT, REPEL, REGEN}`), and (b) `StepperSupervisor`'s braking logic
-reworked to use repel-on-approach instead of (or alongside) the current attract-on-
-departure `brake_hold`. Neither is built -- flagged as a natural next step, not assumed.
+**Repel-pumping is now built.** `PulseCmd` carries an explicit `polarity` field
+(`"attract"` default, or `"repel"`, mirroring `docs/DESIGN.md`'s `polarity_t {ATTRACT,
+REPEL, REGEN}`), and `supervisor.current_at()` sign-flips the envelope for `"repel"`.
+Every PM-branch station (`k_lin > 0`) gets **both** an approach-side attract pump
+(`StepperSupervisor._run_step`, unchanged in spirit from before) **and** a departure-side
+repel kick (`StepperSupervisor._fire_departure`, scheduled by `on_gate` once dead-
+reckoning says the station's center has been passed, fired from `tick()`): `q_shape < 0`
+on departure, and a negative (repel) current there makes the force product positive --
+forward thrust, the same sign convention that makes attract work on approach. Reluctance-
+only stations (`k_quad > 0`, `k_lin == 0`) still only ever get the approach pump --
+attraction can't be signed regardless of current direction, so there's nothing for a
+repel kick to exploit there.
 
-**Known approximation:** `_station_k_pump()`'s calibration (used to size pump/brake pulse
-current from a commanded energy) is derived assuming a pure quadratic (`F ∝ i²`)
-reluctance response. With `Cmag=0.0` this assumption is simply wrong in form (the real
-response is linear in `i`, not quadratic), so delivered energy for a commanded `dE_cmd`
-will be off by more than in the old hybrid case -- worth revisiting (re-deriving
-`_station_k_pump`-equivalent sizing for the PM branch specifically) if tracking accuracy
-against `target_velocity_m_s` matters more than it has so far.
+**Actually driving a negative current needs `driver_bipolar=True`** (`LinearActuatorParams`,
+default `False`): a single half-bridge can only ever source `i >= 0`, matching the
+original reference driver, so repel-pumping has no electrical effect under it in `"rl"`
+mode (a negative target just decays toward zero -- see section 2.3). Under `"ideal"` mode
+there's no hardware model at all, so a signed target is reached instantly regardless of
+`driver_bipolar`. In one measured case, `driver_bipolar=True` alone was worth a ~2-3x
+speed difference at otherwise-identical everything else (see `docs/DESIGN_OPTIMIZER.md`)
+-- exactly the H-bridge-vs-half-bridge tradeoff this section originally flagged as
+unbuilt.
+
+**The PM-branch pump-sizing approximation flagged here previously is fixed.**
+`_station_k_pump()` now returns `(k_quad, k_lin)` separately -- `k_quad` for the
+reluctance branch's `dE ~ i²` scaling (unchanged), `k_lin` for the PM branch's `dE ~ i`
+scaling (linear, as the physics actually requires, scaled by whichever current envelope
+the PM branch uses -- see `supervisor.envelope_average_linear`). `_i_peak_for_energy`
+inverts the combined quadratic `dE = k_quad*i² + k_lin*i` exactly for either pure branch
+(and sensibly, if approximately, for a hybrid with both nonzero). The old
+quadratic-only formula was a real mis-sizing for a pure-PM slug, not just an
+approximation to tighten -- it's no longer in use.
 
 ### 2.2 Gate placement (5 coils, 5 gates)
 
@@ -155,33 +168,98 @@ Euler. It's a shared, geometry-agnostic primitive in `plant.py`, not linear-step
 specific, in case the pendulum ever needs the same treatment.
 
 **Driving it.** Real current-mode drivers regulate current with a comparator/PWM loop,
-not an open-loop voltage command. `linear_plant.coil_current_step()` models the simplest
-version of that: hysteretic bang-bang, full bus voltage while actual current is below
-the target (still `current_at()`'s raised-cosine profile -- now a TARGET rather than the
-literal current), zero (synchronous freewheel through the winding's own resistance) once
-at or above it. This driver has **no negative rail**: it can only ever reach `i >= 0`,
-matching the unipolar reference driver and `StepperSupervisor`'s current unipolar
-commutation -- a negative target (repel; not currently commanded) would just decay toward
-zero rather than actually go negative. A bipolar (H-bridge) driver would need its own
-signed variant; not built (see 2.1's PM-branch discussion of what else repel/regen needs).
+not an open-loop voltage command. `linear_plant.coil_current_step()` models an idealized
+version of that loop: it solves for the exact CONSTANT voltage that would drive current
+from where it actually is to the target over exactly one control tick (inverting
+`rl_current_step`'s own closed form), then clamps that to what the driver rail can
+actually supply -- `[0, bus_voltage_v]` for a single half-bridge (`driver_bipolar=False`,
+the reference driver, `i >= 0` only) or `[-bus_voltage_v, bus_voltage_v]` for an H-bridge
+(`driver_bipolar=True`). When the exact voltage is within the rail this reaches the
+target exactly after one step, at any `dt`, with no overshoot possible by construction;
+when it isn't, applying the rail limit for the whole step is the correctly rail-limited
+response. `driver_bipolar=False` still means a negative target can't actually be reached
+(same as before) -- repel-pumping (section 2.1) needs `driver_bipolar=True` to take
+effect under `"rl"`.
+
+This replaced an earlier two-state (full-on/full-off) bang-bang model, which chattered
+around the target under normal conditions but broke down outright for a real corner of
+this project's own design-optimizer search space: a low-resistance coil (few turns, thick
+winding) under a high bus voltage can have a bang-bang steady-state current (`V/R`)
+orders of magnitude above the intended target, discovered via a dt-refinement check where
+reported exit speed kept *dropping* as `dt` shrank instead of converging. See
+`docs/DESIGN_OPTIMIZER.md` section 1.1 for the full story -- no amount of sub-stepping
+fixed it, because the failure was the control law's steady-state target being wrong by
+orders of magnitude, not an integration-accuracy problem.
 
 **What this reveals, with the reference L/R (1.2 ohm / 4 mH -> tau ~ 3.3 ms):** the
 coil's own electrical response is much FASTER than the commutation timescale (pump
 windows tens of ms wide), so under `"rl"` the actual current tracks the idealized
-raised-cosine target closely, chattering slightly around it rather than lagging it
-substantially -- a naive bang-bang controller with no hysteresis band can even briefly
-*overshoot* a slowly-rising target, not just lag it. The one thing that's true regardless
-of these relative timescales: current cannot jump to a target in zero time from a cold
-start (see `tests/test_linear_plant.py::test_rl_current_lags_an_ideal_instantaneous_target`
-and `test_plant.py`'s `rl_current_step` tests). If you want `"rl"` to visibly matter more
-than a small ripple -- e.g. to see a real "hard cut isn't instant" decay tail dominate
-behavior -- either slow the commutation down, speed up the current target's ramp
-(shorter pump windows), or increase `inductance_h` relative to `resistance_ohm`.
+raised-cosine target closely with only a small lag, never overshooting it (by
+construction, now that the driver targets the exact tracking voltage rather than bang-
+banging toward it). The one thing that's true regardless of relative timescales: current
+cannot jump to a target in zero time from a cold start (see
+`tests/test_linear_plant.py::test_rl_current_lags_an_ideal_instantaneous_target` and
+`test_plant.py`'s `rl_current_step` tests). If you want `"rl"` to visibly matter more than
+a small ripple -- e.g. to see a real "hard cut isn't instant" decay tail dominate behavior
+-- either slow the commutation down, speed up the current target's ramp (shorter pump
+windows), or increase `inductance_h` relative to `resistance_ohm`.
 
 **What "ideal" is still for:** fast, simple sweeps where electrical dynamics aren't the
 question -- e.g. everything in this document's earlier sections, and the CLI examples
 run so far, used it. Switch to `"rl"` specifically when you want to see the effect of
 inductance itself.
+
+### 2.4 Thermal dynamics: winding self-heating
+
+Everything above (and every result reported by `docs/DESIGN_OPTIMIZER.md`'s search) treats
+`CoilStation.resistance_ohm` as a fixed constant. It isn't, physically: copper resistivity
+rises ~0.39%/C (`plant.COPPER_TEMP_COEFF_PER_C`, already used at BUILD time by
+`coil_design.wind_coil`'s `temperature_c` parameter), and a coil dissipates real power
+(`i^2*R`) every time it's energized. Left unmodeled, an optimizer is free to recommend a
+design that only looks fast because it never pays a heating penalty -- more turns, more
+current, and a bus voltage far above what a continuously-operating winding could actually
+sustain, with nothing in the simulation to say otherwise.
+
+`LinearActuatorParams.thermal_model` (default `False`, reproducing the fixed-resistance
+model exactly) turns on a genuine one-node thermal model, per coil:
+
+```
+C_th * dT/dt = i^2*R(T) - (T - T_ambient) / R_th
+R(T) = resistance_ohm * (1 + COPPER_TEMP_COEFF_PER_C * (T - ambient_temperature_c))
+```
+
+`plant.thermal_step` is the exact closed-form update for this (same first-order-linear-ODE
+shape, and same reason, as `rl_current_step`'s RL circuit: unconditionally stable
+regardless of how `dt` compares to the thermal time constant `C_th*R_th`, which is usually
+much larger than the electrical `tau` but nothing guarantees that across an arbitrary
+design search). `linear_plant.coil_temperature_step` wraps it per-coil;
+`linear_plant.coil_resistance` computes `R(T)` and feeds it back into `coil_current_step`
+(via its `resistance_ohm_override` parameter) so `"rl"` mode's electrical dynamics actually
+see the hotter, higher-resistance coil, not just a number that gets computed and discarded.
+Temperature is tracked under `"ideal"` current mode too (dissipation happens regardless of
+how the current got there), it just doesn't feed back into anything under `"ideal"`, which
+has no hardware model at all.
+
+**`thermal_mass_j_per_k` is derived from the winding's own copper, not fabricated.**
+`coil_design.wind_coil` computes it as (copper volume) x (copper density) x (specific
+heat), where copper volume is the mean turn circumference times the winding's copper
+cross-sectional area -- turns cancels out of that product entirely (see
+`tests/test_coil_design.py::test_wind_coil_thermal_mass_matches_a_direct_copper_volume_calculation`).
+This is a **lower bound**: it covers only the copper itself, not the bobbin, potting
+compound, or frame around it, all of which add real thermal mass in a physical build.
+**`thermal_resistance_k_per_w` has no such derivation** -- it depends on convection,
+airflow, and mounting, none of which this model has any basis to estimate from turns and
+dimensions alone -- so it stays a placeholder constant (`CoilStation.thermal_resistance_k_per_w`,
+default 8 K/W) like every other uncalibrated value here, pending a real measurement.
+
+**Wired into the search.** `optimize_design.py`'s `build_params` sets `thermal_model=True`
+(and `ambient_temperature_c=20.0`, matching `coil_design.build_coil_station`'s own build-
+time reference temperature) for every candidate the search evaluates -- see
+`docs/DESIGN_OPTIMIZER.md`. A design that only looked fast because it never paid a heating
+penalty no longer gets a free pass; `thermal_resistance_k_per_w`'s placeholder value
+(8 K/W, uncalibrated -- see above) still bounds how much this can currently mean in
+absolute terms, but the qualitative effect (a design too weak in R_th for its own
+dissipation shows some real speed penalty within the run) is genuine.
 
 ## 3. Estimator: position, velocity, and the stall caveat
 
@@ -205,12 +283,28 @@ guess.
 ## 4. Supervisor: forward commutation and startup bootstrap
 
 Because `q_shape` is zero-and-odd at each coil's own center, "pump on approach, cut at
-center" -- the pendulum's core trick -- applies unchanged at every station. There's no
-direction/polarity choice here (always forward, always attract-only), so the ring's
-`commTable[sector][dir]` collapses to a plain ordered list of stations: after gate[j]
-fires, pump coil[j], cut at its predicted center-crossing time (with a phase-advance lead
-to compensate coil L/R electrical rise time, the linear analog of the ring's
-`theta_adv = beta * omega`).
+center" -- the pendulum's core trick -- applies unchanged at every station. Direction is
+never in question (always forward), so the ring's `commTable[sector][dir]` collapses to
+a plain ordered list of stations: after gate[j] fires, pump coil[j], cut at its predicted
+center-crossing time (with a phase-advance lead to compensate coil L/R electrical rise
+time, the linear analog of the ring's `theta_adv = beta * omega`); a PM-branch station
+also gets a departure-side repel kick once dead-reckoning says its center has been passed
+(section 2.1) -- reluctance-only stations remain attract-only in both directions, since
+attraction can't be signed regardless of current.
+
+**The center-crossing prediction is accel-corrected, not naive dead reckoning.**
+`StepperSupervisor._predict_arrival` (called by both `_run_step`'s pump cutoff and the
+departure-kick scheduling above) estimates the crossing time using a SUVAT constant-
+acceleration average velocity, `(v0 + v1) / 2`, where `v1` comes from energy conservation
+on the energy this pulse is actually about to deliver -- not `LinearStepperEstimator`'s
+own plain constant-velocity `time_to_reach()`. A strong pump measurably accelerates the
+slug *during* the very approach it's predicting the timing of, so a constant-velocity
+guess systematically predicts arrival too late; the stale cutoff then leaves the coil
+still energized once the slug has already crossed its center, where the same "attract"
+current pulls backward instead (`q_shape`'s sign has flipped) -- enough to fully reverse
+a high-thrust design at a coarse simulation `dt`. See `docs/DESIGN_OPTIMIZER.md` section
+1.2 for the full failure mode and why the correction has to use the energy *actually
+deliverable* at the current-limited `i_peak`, not the raw commanded energy.
 
 **Startup is structurally easier than the pendulum's.** `DESIGN.md` section 4.6: a
 soft-iron pendulum bob *always* rests at bottom-center (gravity puts it there), which is
@@ -259,9 +353,12 @@ velocity is negligible) rather than an unlucky rest position.
 
 Configurable via `[actuator] end_of_travel`:
 
-- **`"coast"` (default):** after the last coil's pump-and-cut fires, stop commutating;
-  the slug exits the tube. Matches the coilgun/staged-launcher framing and needs no
-  additional control logic.
+- **`"coast"` (default):** after the last coil's pump-and-cut fires, stop commutating and
+  let the slug exit -- except that a PM-branch last coil still fires its departure-repel
+  kick first (section 2.1, `_end_of_travel`'s "coast" branch calls `_fire_departure`
+  instead of just going silent): the same free extra thrust every earlier station gets,
+  not a special case. Falls back to true silence only when there's no PM branch to repel
+  with (a pure-reluctance build).
 - **`"brake_hold"`:** mirrors the pendulum's "attract on departure" braking, fired after
   dead-reckoning says the slug has passed the last coil's center (there is no gate past
   it to sense this directly -- a consequence of the entry-gate placement in section 2).

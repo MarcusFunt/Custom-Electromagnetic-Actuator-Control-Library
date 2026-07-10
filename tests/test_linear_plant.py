@@ -6,6 +6,8 @@ from emac_sim.linear_plant import (
     GateStation,
     LinearActuatorParams,
     coil_current_step,
+    coil_resistance,
+    coil_temperature_step,
     default_coil_stations,
     default_gate_stations,
     kinetic_energy,
@@ -231,6 +233,48 @@ def test_coil_current_step_cannot_drive_current_negative():
         i = coil_current_step(i, i_target=-5.0, coil=coil, bus_voltage_v=12.0, dt=1e-4)
         assert i >= 0.0
     assert i == pytest.approx(0.0, abs=1e-6)
+
+
+def test_coil_current_step_resistance_override_changes_the_tracking_voltage():
+    """A hotter coil (higher resistance) needs more voltage to reach the same target in
+    the same dt -- confirms resistance_ohm_override actually participates in the solve,
+    not just get ignored, and that the override, not coil.resistance_ohm, wins."""
+    coil = CoilStation(position_m=0.0, resistance_ohm=1.2, inductance_h=0.004)
+    bus_v, target, dt = 48.0, 3.0, 1e-4   # short dt: rail-limited, so R changes the outcome
+
+    i_cold = coil_current_step(0.0, i_target=target, coil=coil, bus_voltage_v=bus_v, dt=dt)
+    i_hot = coil_current_step(0.0, i_target=target, coil=coil, bus_voltage_v=bus_v, dt=dt,
+                              resistance_ohm_override=2.4)
+    assert i_hot < i_cold    # higher R -> slower current rise for the same applied voltage
+    assert i_cold == pytest.approx(
+        coil_current_step(0.0, i_target=target, coil=coil, bus_voltage_v=bus_v, dt=dt,
+                          resistance_ohm_override=1.2))
+
+
+def test_coil_resistance_matches_plant_formula_and_rises_with_temperature():
+    coil = CoilStation(position_m=0.0, resistance_ohm=1.2)
+    assert coil_resistance(coil, 20.0) == pytest.approx(1.2)
+    assert coil_resistance(coil, 70.0) > coil_resistance(coil, 20.0)
+
+
+def test_coil_temperature_step_converges_to_steady_state_under_sustained_current():
+    """Exact for any dt (plant.thermal_step), so a single dt >> tau step lands at the
+    steady state directly rather than needing a long small-dt loop."""
+    coil = CoilStation(position_m=0.0, thermal_mass_j_per_k=10.0, thermal_resistance_k_per_w=5.0)
+    ambient, current, resistance = 20.0, 3.0, 1.2
+    tau = coil.thermal_mass_j_per_k * coil.thermal_resistance_k_per_w
+    t = coil_temperature_step(ambient, current, resistance, coil, ambient, dt=50.0 * tau)
+    expected_steady_state = ambient + (current * current * resistance) * coil.thermal_resistance_k_per_w
+    assert t == pytest.approx(expected_steady_state, rel=1e-9)
+    assert t > ambient    # it actually heated up
+
+
+def test_coil_temperature_step_with_zero_current_stays_at_ambient():
+    coil = CoilStation(position_m=0.0, thermal_mass_j_per_k=10.0, thermal_resistance_k_per_w=5.0)
+    t = 20.0
+    for _ in range(1000):
+        t = coil_temperature_step(t, 0.0, 1.2, coil, ambient_c=20.0, dt=1e-3)
+    assert t == pytest.approx(20.0)
 
 
 def test_rl_current_lags_an_ideal_instantaneous_target():

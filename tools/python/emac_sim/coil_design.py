@@ -18,12 +18,14 @@ from scipy import integrate
 from scipy.special import ellipe, ellipk
 
 from .linear_plant import CoilStation
+from .plant import COPPER_TEMP_COEFF_PER_C
 
 MU_0 = 4.0e-7 * math.pi                 # H/m, vacuum permeability
 COPPER_RESISTIVITY_20C_OHM_M = 1.68e-8  # ohm*m at 20 C
-COPPER_TEMP_COEFF_PER_C = 0.00393       # fractional resistivity change per degree C
 COPPER_RESISTIVITY_OHM_M = COPPER_RESISTIVITY_20C_OHM_M   # back-compat alias, 20 C value
 NDFEB_DENSITY_KG_M3 = 7500.0            # typical sintered NdFeB density
+COPPER_DENSITY_KG_M3 = 8960.0           # kg/m^3
+COPPER_SPECIFIC_HEAT_J_PER_KG_K = 385.0 # J/(kg*K)
 
 
 def copper_resistivity_ohm_m(temperature_c: float = 20.0) -> float:
@@ -42,6 +44,7 @@ class CoilWinding:
     inductance_h: float
     wire_diameter_m: float
     mean_radius_m: float
+    thermal_mass_j_per_k: float
 
 
 def wind_coil(turns: int, coil_length_m: float, radial_thickness_m: float,
@@ -79,8 +82,21 @@ def wind_coil(turns: int, coil_length_m: float, radial_thickness_m: float,
     inductance_h = (3.937e-5 * mean_radius_m**2 * turns**2
                     / (9.0 * mean_radius_m + 10.0 * coil_length_m))
 
+    # Thermal mass from the copper itself, not a fabricated constant: total copper volume
+    # is (mean turn circumference) x (copper cross-sectional area) -- turns cancels out
+    # (total_wire_length_m = turns*mean_turn_length_m, wire_area_m2 = copper_area_m2/turns),
+    # so it reduces to the winding's own copper_area_m2 swept once around the mean radius,
+    # independent of how that area is divided into turns. This deliberately covers ONLY the
+    # copper's own heat capacity, not the bobbin/potting/frame around it -- a real build's
+    # thermal mass is at least this much, usually more; treat this as a lower bound, not a
+    # calibrated value (unlike thermal_resistance_k_per_w below, which this project has no
+    # geometry-derived basis for at all -- see linear_plant.CoilStation).
+    copper_volume_m3 = mean_turn_length_m * copper_area_m2
+    thermal_mass_j_per_k = copper_volume_m3 * COPPER_DENSITY_KG_M3 * COPPER_SPECIFIC_HEAT_J_PER_KG_K
+
     return CoilWinding(resistance_ohm=resistance_ohm, inductance_h=inductance_h,
-                       wire_diameter_m=wire_diameter_m, mean_radius_m=mean_radius_m)
+                       wire_diameter_m=wire_diameter_m, mean_radius_m=mean_radius_m,
+                       thermal_mass_j_per_k=thermal_mass_j_per_k)
 
 
 def magnet_mass_kg(magnet_radius_m: float, magnet_length_m: float,
@@ -239,4 +255,5 @@ def build_coil_station(position_m: float, turns: int, coil_length_m: float,
     x_c = peak_offset_m
     return CoilStation(position_m=position_m, x_c=x_c, Cmag=0.0, k_a=k_a,
                        resistance_ohm=winding.resistance_ohm,
-                       inductance_h=winding.inductance_h)
+                       inductance_h=winding.inductance_h,
+                       thermal_mass_j_per_k=winding.thermal_mass_j_per_k)

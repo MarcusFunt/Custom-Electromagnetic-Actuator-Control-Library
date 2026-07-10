@@ -3,6 +3,7 @@ import math
 import pytest
 
 from emac_sim.plant import (
+    COPPER_TEMP_COEFF_PER_C,
     PendulumParams,
     amplitude_from_energy,
     current_for,
@@ -10,8 +11,10 @@ from emac_sim.plant import (
     f_current,
     f_current_pm,
     q_shape,
+    resistance_at_temperature,
     rl_current_step,
     tau_mag,
+    thermal_step,
 )
 
 
@@ -133,3 +136,45 @@ def test_f_current_pm_is_linear_and_odd():
         assert f_current_pm(-i, k_a) == pytest.approx(-f_current_pm(i, k_a))
     assert f_current_pm(2.0, k_a) == pytest.approx(2.0 * f_current_pm(1.0, k_a))
     assert f_current_pm(0.0, k_a) == 0.0
+
+
+def test_resistance_at_temperature_matches_reference_at_the_reference_point():
+    assert resistance_at_temperature(1.2, 20.0) == pytest.approx(1.2)
+    assert resistance_at_temperature(1.2, 45.0, ref_temperature_c=45.0) == pytest.approx(1.2)
+
+
+def test_resistance_at_temperature_is_linear_with_the_copper_coefficient():
+    r_ref = 1.2
+    hotter = resistance_at_temperature(r_ref, 70.0)
+    expected = r_ref * (1.0 + COPPER_TEMP_COEFF_PER_C * (70.0 - 20.0))
+    assert hotter == pytest.approx(expected)
+    assert hotter > r_ref     # hotter copper -> higher resistance
+
+
+def test_thermal_step_converges_to_the_steady_state_temperature():
+    """Exact for any dt (see thermal_step's docstring), so a single step at dt >> tau
+    lands essentially exactly at the steady state T_ambient + P*R_th -- unlike
+    rl_current_step's own convergence test, which iterates many small-dt steps, this
+    exploits the closed form directly since the thermal time constant here (50 s) would
+    make a small-dt loop either impractically slow or (as first written) not actually run
+    long enough to converge within a tight tolerance."""
+    c_th, r_th, ambient, power = 10.0, 5.0, 20.0, 2.0
+    tau = c_th * r_th
+    t = thermal_step(ambient, power, c_th, r_th, ambient, dt=50.0 * tau)
+    assert t == pytest.approx(ambient + power * r_th, rel=1e-9)
+
+
+def test_thermal_step_matches_the_analytic_single_step_response():
+    c_th, r_th, ambient, power = 10.0, 5.0, 20.0, 2.0
+    dt = 1.0
+    tau = c_th * r_th
+    t_ss = ambient + power * r_th
+    expected = t_ss + (ambient - t_ss) * math.exp(-dt / tau)
+    assert thermal_step(ambient, power, c_th, r_th, ambient, dt) == pytest.approx(expected)
+
+
+def test_thermal_step_with_zero_power_relaxes_toward_ambient():
+    c_th, r_th, ambient = 10.0, 5.0, 20.0
+    tau = c_th * r_th
+    t = thermal_step(80.0, 0.0, c_th, r_th, ambient, dt=50.0 * tau)
+    assert t == pytest.approx(ambient, abs=1e-6)

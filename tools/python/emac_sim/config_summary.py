@@ -67,6 +67,8 @@ def linear_config_summary(config: LinearSimulationConfig, source: str | None = N
             "initial_position_m": config.actuator.initial_position_m,
             "end_of_travel": config.actuator.end_of_travel,
             "pressure_bias_n": config.actuator.pressure_bias_n,
+            "thermal_model": config.actuator.thermal_model,
+            "ambient_temperature_c": config.actuator.ambient_temperature_c,
         },
         "gates": [
             {"position_m": g.position_m, "effective_width_m": g.effective_width_m}
@@ -82,6 +84,8 @@ def linear_config_summary(config: LinearSimulationConfig, source: str | None = N
                 "k_a_n_per_a": c.k_a_n_per_a,
                 "resistance_ohm": c.resistance_ohm,
                 "inductance_h": c.inductance_h,
+                "thermal_mass_j_per_k": c.thermal_mass_j_per_k,
+                "thermal_resistance_k_per_w": c.thermal_resistance_k_per_w,
             }
             for c in config.coils
         ],

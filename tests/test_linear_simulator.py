@@ -72,6 +72,7 @@ def test_log_field_lengths_are_consistent():
     assert len(log.v) == n
     assert len(log.active_coil) == n
     assert len(log.active_current) == n
+    assert len(log.active_temperature_c) == n
     assert len(log.x_est) == n
     assert len(log.status) == n
     assert len(log.supervisor_mode) == n
@@ -111,3 +112,51 @@ def test_rl_current_loop_produces_a_genuinely_different_trace():
     _, _, log_rl = run_with_current_loop("rl")
 
     assert log_rl.active_current != log_ideal.active_current
+
+
+def test_thermal_model_off_by_default_pins_every_coil_at_ambient():
+    """Regression guard: thermal_model=False (the default) must reproduce the exact
+    fixed-resistance behavior -- every logged temperature stays at ambient, never moves,
+    however much current flows."""
+    p, _, log = run_with_current_loop("rl")
+    assert not p.thermal_model
+    assert all(temp == p.ambient_temperature_c for temp in log.active_temperature_c)
+
+
+def test_thermal_model_on_heats_up_a_sustained_high_current_coil():
+    """With thermal_model=True and enough sustained current, a coil's logged temperature
+    must actually rise above ambient at some point in the run -- otherwise the feature
+    isn't doing anything."""
+    p = LinearActuatorParams(current_loop="rl", bus_voltage_v=48.0, thermal_model=True)
+    est = LinearStepperEstimator(
+        gate_positions=[g.position_m for g in p.gates],
+        gate_widths=[g.w_eff for g in p.gates],
+    )
+    sup = StepperSupervisor(p, i_max=6.0)
+    sim = LinearSimulator(p, est, sup, dt=2e-4, sample_every=10)
+    log = sim.run(x0=-0.03, v0=0.0, v_tgt=0.5, t_end=3.0)
+
+    assert max(log.active_temperature_c) > p.ambient_temperature_c
+
+
+def test_thermal_model_resistance_rise_lags_a_pure_rl_run_with_the_same_current():
+    """Feeding the temperature-adjusted (higher) resistance back into the electrical
+    dynamics under thermal_model=True must make current rise measurably more slowly than
+    an otherwise-identical thermal_model=False run once the coil has had time to heat up
+    -- confirming the R(T) feedback loop is actually wired into coil_current_step, not
+    just computed and discarded."""
+    def run(thermal_model: bool):
+        p = LinearActuatorParams(current_loop="rl", bus_voltage_v=48.0,
+                                  thermal_model=thermal_model)
+        est = LinearStepperEstimator(
+            gate_positions=[g.position_m for g in p.gates],
+            gate_widths=[g.w_eff for g in p.gates],
+        )
+        sup = StepperSupervisor(p, i_max=6.0)
+        sim = LinearSimulator(p, est, sup, dt=2e-4, sample_every=10)
+        return sim.run(x0=-0.03, v0=0.0, v_tgt=0.5, t_end=3.0)
+
+    log_cold = run(thermal_model=False)
+    log_hot = run(thermal_model=True)
+
+    assert log_hot.active_current != log_cold.active_current

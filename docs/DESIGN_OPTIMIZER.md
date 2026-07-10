@@ -46,9 +46,21 @@ single-layer air-core solenoid formula rather than the simpler long-solenoid one
 mu_0*N^2*A/length`) -- the two agree within ~0.3% once the coil is much longer than its
 radius, but diverge sharply for short/fat coils (Wheeler gives roughly half, or less, of
 what the long-solenoid formula would overestimate) -- exactly the regime `coil_length_m`'s
-default bounds (5-80mm) let the search land in. **Remaining limit:** no thermal model
-(self-heating over time / duty cycle) feeds `temperature_c` back automatically -- it's a
-knob you can pass, not something the simulation tracks yet.
+default bounds (5-80mm) let the search land in.
+
+**Self-heating now feeds back into every candidate the search evaluates.**
+`build_params` sets `LinearActuatorParams.thermal_model=True`: each coil's temperature
+integrates from its own `i^2*R` dissipation over the run (`plant.thermal_step`, a one-node
+thermal model -- see `docs/DESIGN_LINEAR.md` section 2.4), and the resulting hotter,
+higher-resistance winding feeds back into the `"rl"` current loop, so a design can no
+longer look fast purely because it never paid a heating penalty. `thermal_mass_j_per_k`
+is derived from the winding's own copper volume (a lower bound -- real bobbin/potting
+mass adds more); `thermal_resistance_k_per_w` has no such derivation and stays a
+placeholder constant (8 K/W) like every other uncalibrated value here, pending a real
+measurement of how a physical coil actually sheds heat. **Remaining limit:** this models
+self-heating WITHIN one run, not a duty-cycle notion of repeated runs back-to-back --
+firing this actuator once, cooling, then firing again isn't distinguished from doing so
+continuously.
 
 **Magnet / slug** (`magnet_mass_kg`, `estimate_k_a`, `build_coil_station`): the slug is a
 cylindrical magnet of given radius, length, and remanence (`Br`). Mass is volume x density
@@ -171,9 +183,10 @@ speeds, across `dt` from `2e-5` to `1e-3` (previously only the entry gate fired 
 Every bound is a placeholder for **your** actual constraints (driver rating, available
 space, magnet grades on hand, budget) -- override them via `Bounds(...)` in Python or the
 `--max-tube-length-m` CLI flag (more flags are easy to add the same way; only the tube
-length constraint has one so far). There is deliberately no thermal, duty-cycle, or cost
-model: a design that "wins" here might cook itself in continuous use, or cost far more
-than a slightly-slower alternative. Treat the output as a starting point for a real
+length constraint has one so far). Self-heating within one run IS modeled now (section 1
+above), but there is still no duty-cycle (repeated runs back-to-back) or cost model: a
+design that "wins" here might still cook itself under continuous/repeated use, or cost far
+more than a slightly-slower alternative. Treat the output as a starting point for a real
 design, not a final answer.
 
 **`driver_bipolar` is a bigger lever than it might look.** Repel-pumping (`docs/

@@ -102,6 +102,29 @@ def test_pressure_bias_n_defaults_to_zero_and_is_configurable():
     assert biased.to_actuator_params().pressure_bias_n == pytest.approx(0.5)
 
 
+def test_thermal_model_defaults_off_and_is_configurable():
+    default = parse_config({"sim": {"kind": "linear_stepper"}})
+    assert default.actuator.thermal_model is False
+    assert default.actuator.ambient_temperature_c == pytest.approx(20.0)
+    assert default.to_actuator_params().thermal_model is False
+    assert default.to_actuator_params().ambient_temperature_c == pytest.approx(20.0)
+
+    warm = parse_config(
+        {
+            "sim": {"kind": "linear_stepper"},
+            "actuator": {"thermal_model": True, "ambient_temperature_c": 35.0},
+            "coils": [{"thermal_mass_j_per_k": 9.0, "thermal_resistance_k_per_w": 6.0}],
+        }
+    )
+    assert warm.actuator.thermal_model is True
+    assert warm.actuator.ambient_temperature_c == pytest.approx(35.0)
+    params = warm.to_actuator_params()
+    assert params.thermal_model is True
+    assert params.ambient_temperature_c == pytest.approx(35.0)
+    assert params.coils[0].thermal_mass_j_per_k == pytest.approx(9.0)
+    assert params.coils[0].thermal_resistance_k_per_w == pytest.approx(6.0)
+
+
 def test_linear_config_values_affect_run_scenario():
     from emac_sim.linear_cli import run_scenario
 

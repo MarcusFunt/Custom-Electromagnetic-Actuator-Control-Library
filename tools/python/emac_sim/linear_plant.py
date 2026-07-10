@@ -30,7 +30,14 @@ import math
 from dataclasses import dataclass, field
 from typing import Sequence
 
-from .plant import f_current, f_current_pm, q_shape, rl_current_step
+from .plant import (
+    f_current,
+    f_current_pm,
+    q_shape,
+    resistance_at_temperature,
+    rl_current_step,
+    thermal_step,
+)
 
 
 @dataclass(frozen=True)
@@ -44,11 +51,25 @@ class CoilStation:
     # PM-branch gain (N/A, linear/signed) from the slug's magnet -- see module docstring.
     # A placeholder pending real calibration, like every other constant in this model.
     k_a: float = 0.20
-    # Electrical properties of the winding itself (air-core: R, L are constant, no
-    # saturation-driven inductance drop). See LinearActuatorParams.current_loop for how
-    # these get used -- ignored entirely under the "ideal" (instantaneous current) mode.
+    # Electrical properties of the winding itself (air-core: R, L are constant WITH
+    # RESPECT TO CURRENT -- no saturation-driven inductance drop; R does still vary with
+    # temperature, see thermal fields below). resistance_ohm is the value AT
+    # LinearActuatorParams.ambient_temperature_c's reference point (matching
+    # coil_design.wind_coil's `temperature_c` param) -- the actual, temperature-adjusted
+    # resistance used at runtime is coil_resistance(). See LinearActuatorParams.
+    # current_loop for how current itself gets used -- ignored entirely under the "ideal"
+    # (instantaneous current) mode.
     resistance_ohm: float = 1.2   # ohm
     inductance_h: float = 0.004   # H
+    # One-node thermal model (see thermal_step / coil_temperature_step below), active only
+    # when LinearActuatorParams.thermal_model is True. thermal_mass_j_per_k is derivable
+    # from the winding's own copper volume (coil_design.wind_coil does this) -- a
+    # lower bound on the real thermal mass, since it ignores bobbin/potting/frame.
+    # thermal_resistance_k_per_w has no geometry-derived formula in this model (it depends
+    # on convection/mounting this project has no basis to estimate) -- a placeholder
+    # constant like every other uncalibrated value here, pending a real measurement.
+    thermal_mass_j_per_k: float = 12.0     # J/K
+    thermal_resistance_k_per_w: float = 8.0  # K/W
 
 
 @dataclass(frozen=True)
@@ -90,11 +111,12 @@ class LinearActuatorParams:
     # Electrical model. "ideal" (default) treats current as instantaneously commandable --
     # the pre-inductance behavior, and still the right choice for fast/simple sims. "rl"
     # integrates each coil's actual current from its own RL circuit (see
-    # coil_current_step()), driven by a hysteretic bang-bang voltage tracking whatever the
-    # supervisor's raised-cosine profile asks for -- current then lags the ideal profile by
-    # roughly the coil's L/R time constant, including a nonzero decay tail after a "hard
-    # cut" (there is no negative supply rail in this unipolar reference driver to force it
-    # to zero faster). See docs/DESIGN_LINEAR.md's electrical-dynamics section.
+    # coil_current_step()), which solves for the exact constant voltage that reaches
+    # whatever the supervisor's raised-cosine profile asks for over one tick, rail-limited
+    # -- current then lags the ideal profile by roughly the coil's L/R time constant,
+    # including a nonzero decay tail after a "hard cut" (there is no negative supply rail
+    # in a single half-bridge driver to force it to zero faster). See
+    # docs/DESIGN_LINEAR.md's electrical-dynamics section.
     current_loop: str = "ideal"           # "ideal" | "rl"
     bus_voltage_v: float = 12.0
     # False (default): a single half-bridge driver, matching the soft-iron reference
@@ -104,6 +126,16 @@ class LinearActuatorParams:
     # (StepperSupervisor's departure-side thrust, docs/DESIGN_LINEAR.md) needs this True
     # to actually take effect under "rl"; under "ideal" it works regardless.
     driver_bipolar: bool = False
+    # One-node-per-coil thermal model (docs/DESIGN_LINEAR.md's thermal section): False
+    # (default) reproduces the exact prior behavior -- every coil's resistance is its
+    # fixed resistance_ohm value, forever, at every current. True tracks each coil's own
+    # winding temperature (see coil_temperature_step()) from its own i^2*R dissipation,
+    # feeding the resulting R(T) back into "rl" mode's electrical dynamics (coil_resistance())
+    # -- so a design that only looks fast because it never pays a heating penalty stops
+    # looking that way. Off by default because it's new and the design-space search
+    # (optimize_design.py) hasn't been re-validated with it on yet.
+    thermal_model: bool = False
+    ambient_temperature_c: float = 20.0
 
 
 def net_force(x: float, currents: Sequence[float], p: LinearActuatorParams) -> float:
@@ -136,7 +168,8 @@ def step(x: float, v: float, currents: Sequence[float], dt: float, p: LinearActu
 
 
 def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
-                       bus_voltage_v: float, dt: float, bipolar: bool = False) -> float:
+                       bus_voltage_v: float, dt: float, bipolar: bool = False,
+                       resistance_ohm_override: float | None = None) -> float:
     """Advance one coil's ACTUAL current toward i_target over one control tick, through
     its own RL circuit rather than snapping to the target instantly. Modeled as an
     idealized current-mode PWM controller: solve for the exact CONSTANT voltage that would
@@ -163,8 +196,15 @@ def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
     as before -- StepperSupervisor's departure-side repel-pumping still needs bipolar=True
     to take effect under "rl" (under "ideal", with no hardware model at all, repel already
     works regardless of this flag).
+
+    resistance_ohm_override, if given, is used instead of coil.resistance_ohm for BOTH
+    the voltage solve and the rl_current_step update -- the hook LinearActuatorParams.
+    thermal_model uses to feed each coil's temperature-adjusted resistance (see
+    coil_resistance()) back into its own electrical dynamics, without changing behavior
+    at all when omitted (the default, exactly reproducing the fixed-resistance model).
     """
-    r, l = coil.resistance_ohm, coil.inductance_h
+    r = coil.resistance_ohm if resistance_ohm_override is None else resistance_ohm_override
+    l = coil.inductance_h
     tau = l / r
     decay = math.exp(-dt / tau)
     v_needed = r * (i_target - i_actual * decay) / (1.0 - decay) if decay < 1.0 else 0.0
@@ -175,3 +215,28 @@ def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
 
 def kinetic_energy(v: float, p: LinearActuatorParams) -> float:
     return 0.5 * p.mass_kg * v * v
+
+
+def coil_resistance(coil: CoilStation, temperature_c: float) -> float:
+    """A coil's actual resistance at its current winding temperature -- coil.resistance_ohm
+    is the value at LinearActuatorParams.ambient_temperature_c (matching coil_design.
+    wind_coil's own `temperature_c` build-time parameter), scaled by the same copper
+    resistivity-vs-temperature law used everywhere else in this project
+    (plant.resistance_at_temperature). Only meaningful when LinearActuatorParams.
+    thermal_model is True; otherwise every coil stays at ambient by construction (see
+    LinearSimulator.run())."""
+    return resistance_at_temperature(coil.resistance_ohm, temperature_c)
+
+
+def coil_temperature_step(temperature_c: float, current_a: float, resistance_ohm: float,
+                           coil: CoilStation, ambient_c: float, dt: float) -> float:
+    """Advance one coil's winding temperature by one control tick, from its own i^2*R
+    dissipation, via plant.thermal_step's exact one-node thermal model. Takes the
+    dissipating current AND resistance explicitly (rather than re-deriving resistance from
+    coil + temperature_c internally) so the caller can pass exactly the resistance value
+    that current was actually driven against this tick, whatever LinearActuatorParams.
+    current_loop had in effect -- keeping power = current_a**2 * resistance_ohm consistent
+    with what really happened electrically, not a second, possibly-stale estimate of it."""
+    power_w = current_a * current_a * resistance_ohm
+    return thermal_step(temperature_c, power_w, coil.thermal_mass_j_per_k,
+                        coil.thermal_resistance_k_per_w, ambient_c, dt)

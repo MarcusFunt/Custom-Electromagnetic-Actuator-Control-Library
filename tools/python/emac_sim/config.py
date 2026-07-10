@@ -128,6 +128,10 @@ class LinearActuatorConfig:
     # of coil current -- see linear_plant.LinearActuatorParams.pressure_bias_n and
     # docs/DESIGN_LINEAR.md. Default 0.0 reproduces the unpressurized model exactly.
     pressure_bias_n: float = 0.0
+    # One-node-per-coil thermal model -- see linear_plant.LinearActuatorParams.
+    # thermal_model. False (default) reproduces the fixed-resistance model exactly.
+    thermal_model: bool = False
+    ambient_temperature_c: float = 20.0
 
 
 @dataclass(frozen=True)
@@ -152,6 +156,10 @@ class LinearCoilConfig:
     # see linear_plant.CoilStation.k_a. Matches that dataclass's default (0.0 there would
     # reproduce the pure-reluctance model, but the actual slug now has a weak PM).
     k_a_n_per_a: float = 0.20
+    # One-node thermal model -- see linear_plant.CoilStation. Only active when
+    # LinearActuatorConfig.thermal_model is True.
+    thermal_mass_j_per_k: float = 12.0
+    thermal_resistance_k_per_w: float = 8.0
 
 
 @dataclass(frozen=True)
@@ -203,7 +211,9 @@ class LinearSimulationConfig:
         coils = tuple(
             CoilStation(position_m=c.position_m, x_c=c.x_c_m, Cmag=c.c_mag_n_per_a2,
                         i_sat=c.i_sat_a, k_a=c.k_a_n_per_a,
-                        resistance_ohm=c.resistance_ohm, inductance_h=c.inductance_h)
+                        resistance_ohm=c.resistance_ohm, inductance_h=c.inductance_h,
+                        thermal_mass_j_per_k=c.thermal_mass_j_per_k,
+                        thermal_resistance_k_per_w=c.thermal_resistance_k_per_w)
             for c in self.coils
         )
         gates = tuple(
@@ -220,6 +230,8 @@ class LinearSimulationConfig:
             current_loop=self.driver.current_loop,
             bus_voltage_v=self.driver.bus_voltage_v,
             driver_bipolar=self.driver.bipolar,
+            thermal_model=self.actuator.thermal_model,
+            ambient_temperature_c=self.actuator.ambient_temperature_c,
         )
 
 
@@ -311,6 +323,8 @@ def _linear_actuator(raw: Any) -> LinearActuatorConfig:
         initial_velocity_m_s=_float(data, "initial_velocity_m_s", 0.0),
         end_of_travel=str(data.get("end_of_travel", "coast")),
         pressure_bias_n=_float(data, "pressure_bias_n", 0.0),
+        thermal_model=bool(data.get("thermal_model", False)),
+        ambient_temperature_c=_float(data, "ambient_temperature_c", 20.0),
     )
 
 
@@ -353,6 +367,8 @@ def _linear_coils(raw: Mapping[str, Any]) -> list[LinearCoilConfig]:
                 inductance_h=_float(data, "inductance_h", 0.004),
                 max_current_a=_float(data, "max_current_a", 6.0),
                 k_a_n_per_a=_float(data, "k_a_n_per_a", 0.20),
+                thermal_mass_j_per_k=_float(data, "thermal_mass_j_per_k", 12.0),
+                thermal_resistance_k_per_w=_float(data, "thermal_resistance_k_per_w", 8.0),
             )
         )
     if not coils:

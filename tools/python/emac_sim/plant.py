@@ -144,3 +144,37 @@ def rl_current_step(i: float, v_applied: float, r: float, l: float, dt: float) -
     tau = l / r
     i_ss = v_applied / r        # steady-state current this voltage would settle to
     return i_ss + (i - i_ss) * math.exp(-dt / tau)
+
+
+COPPER_TEMP_COEFF_PER_C = 0.00393   # fractional resistivity/resistance change per degree C
+                                     # (docs/DESIGN.md: "mandatory, not optional" for a real
+                                     # build -- shared here, not coil_design-specific, since
+                                     # it's a property of copper, not of any one geometry)
+
+
+def resistance_at_temperature(resistance_ref_ohm: float, temperature_c: float,
+                               ref_temperature_c: float = 20.0) -> float:
+    """Winding resistance at temperature_c, given its value at ref_temperature_c (20 C by
+    convention -- what coil_design.wind_coil computes at build time). Copper resistivity
+    is linear in temperature about the reference point, and resistance scales identically
+    (same length/area, just the material's resistivity changing) -- good over the modest
+    range a winding actually operates in, not a substitute for tracking phase transitions
+    or extreme overheating."""
+    return resistance_ref_ohm * (1.0 + COPPER_TEMP_COEFF_PER_C * (temperature_c - ref_temperature_c))
+
+
+def thermal_step(temperature_c: float, power_w: float, thermal_mass_j_per_k: float,
+                  thermal_resistance_k_per_w: float, ambient_c: float, dt: float) -> float:
+    """Exact update for a one-node thermal model (C_th * dT/dt = P - (T - T_ambient)/R_th),
+    assuming power_w is piecewise-constant over dt -- the thermal analog of
+    rl_current_step's RL circuit (same first-order linear ODE shape: a constant forcing
+    term relaxing exponentially toward its own steady state), reusing the same exact
+    closed-form update rather than explicit Euler for the same reason: unconditionally
+    stable regardless of how dt compares to the thermal time constant C_th*R_th, which
+    matters since nothing guarantees that time constant stays much larger than a
+    simulation tick across an arbitrary design search."""
+    tau = thermal_mass_j_per_k * thermal_resistance_k_per_w
+    if tau <= 0.0:
+        return ambient_c + power_w * thermal_resistance_k_per_w
+    t_ss = ambient_c + power_w * thermal_resistance_k_per_w   # steady-state temperature
+    return t_ss + (temperature_c - t_ss) * math.exp(-dt / tau)

@@ -3,7 +3,9 @@ import math
 import pytest
 
 from emac_sim.coil_design import (
+    COPPER_DENSITY_KG_M3,
     COPPER_RESISTIVITY_20C_OHM_M,
+    COPPER_SPECIFIC_HEAT_J_PER_KG_K,
     MU_0,
     build_coil_station,
     copper_resistivity_ohm_m,
@@ -146,6 +148,33 @@ def test_wind_coil_at_higher_temperature_has_higher_resistance_same_inductance()
     hot = wind_coil(150, 0.02, 0.008, 0.006, temperature_c=100.0)
     assert hot.resistance_ohm > cold.resistance_ohm
     assert hot.inductance_h == pytest.approx(cold.inductance_h)
+
+
+def test_wind_coil_thermal_mass_matches_a_direct_copper_volume_calculation():
+    """thermal_mass_j_per_k should equal (copper volume) x (copper density) x (specific
+    heat), where copper volume = mean turn circumference x copper cross-sectional area --
+    turns cancels out of that product, so it should also be identical across different
+    turn counts for the same envelope (a check that's independently useful, not just
+    incidental to the formula)."""
+    turns, coil_length, radial_thickness, bore_radius, packing = 150, 0.02, 0.008, 0.006, 0.8
+    w = wind_coil(turns, coil_length, radial_thickness, bore_radius, packing_factor=packing)
+
+    mean_radius = bore_radius + 0.5 * radial_thickness
+    mean_turn_length = 2.0 * math.pi * mean_radius
+    copper_area = coil_length * radial_thickness * packing
+    expected = mean_turn_length * copper_area * COPPER_DENSITY_KG_M3 * COPPER_SPECIFIC_HEAT_J_PER_KG_K
+    assert w.thermal_mass_j_per_k == pytest.approx(expected)
+    assert w.thermal_mass_j_per_k > 0.0
+
+    other_turns = wind_coil(300, coil_length, radial_thickness, bore_radius, packing_factor=packing)
+    assert other_turns.thermal_mass_j_per_k == pytest.approx(w.thermal_mass_j_per_k)
+
+
+def test_build_coil_station_carries_through_the_geometry_derived_thermal_mass():
+    coil = build_coil_station(0.1, turns=150, coil_length_m=0.02, radial_thickness_m=0.01,
+                               magnet_radius_m=0.006, magnet_length_m=0.02, remanence_t=1.3)
+    expected = wind_coil(150, 0.02, 0.01, 0.006 + 0.0015).thermal_mass_j_per_k
+    assert coil.thermal_mass_j_per_k == pytest.approx(expected)
 
 
 def test_off_axis_field_matches_on_axis_formula_in_the_rho_to_zero_limit():

@@ -23,7 +23,15 @@ same way -- both push the search away from that region rather than crashing it.
 Every bound below is a placeholder you should replace with your actual constraints (driver
 voltage/current rating, available space, magnet grades on hand, etc.) -- see
 docs/DESIGN_OPTIMIZER.md for what each one means physically and why it's not enforced any
-more precisely than this (no thermal/duty-cycle model, no cost model).
+more precisely than this (no duty-cycle or cost model).
+
+Each candidate's per-coil winding self-heating IS modeled (`LinearActuatorParams.
+thermal_model=True`, see linear_plant.py / docs/DESIGN_LINEAR.md section 2.4): resistance
+rises with each coil's own i^2*R dissipation over the run, fed back into the "rl" current
+loop, so a design can no longer look fast purely because it never pays a heating penalty --
+more turns/current/voltage than a winding could sustain now shows up as a real, if partial,
+speed penalty within the run itself (the model has no duty-cycle notion of repeated runs
+back-to-back, only self-heating within one).
 """
 
 from __future__ import annotations
@@ -131,6 +139,12 @@ def build_params(knobs: DesignKnobs) -> LinearActuatorParams:
         coils=coils, gates=gates,
         current_loop="rl", bus_voltage_v=knobs.bus_voltage_v,
         driver_bipolar=knobs.driver_bipolar,
+        # Self-heating is on for the search itself (not just available as an opt-in) --
+        # see module docstring and docs/DESIGN_LINEAR.md section 2.4. ambient_temperature_c
+        # matches coil_design.build_coil_station's own build-time reference temperature
+        # (20 C, its default), so a coil starts the run exactly at its as-wound resistance.
+        thermal_model=True,
+        ambient_temperature_c=20.0,
     )
 
 
