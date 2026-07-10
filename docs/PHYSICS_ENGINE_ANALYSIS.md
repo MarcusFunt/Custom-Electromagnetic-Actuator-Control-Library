@@ -51,9 +51,14 @@ base class would hide important design decisions.
 3. **The magnetic lobe is still synthetic.** `q_shape()` is an analytic placeholder.  It is
    useful for controller development but should eventually be replaced by a fitted lookup
    table from FEM or calibration data.
-4. **Thermal and supply effects are mostly absent.** Coil resistance, bus droop, driver
-   current limits, and heating are not yet fed back into the force map.  The current model is
-   therefore closer to a virtual lab knob than a hardware predictor.
+4. **Bus droop is still absent; winding self-heating is now modeled.** `plant.
+   resistance_at_temperature` / `plant.thermal_step` track each linear-stepper coil's
+   temperature from its own i^2*R dissipation (one-node thermal model, opt-in via
+   `LinearActuatorParams.thermal_model` -- see `docs/DESIGN_LINEAR.md` section 2.4) and
+   feed the resulting resistance back into the `"rl"` current loop; `optimize_design.py`'s
+   search runs with it on for every candidate. Driver current limits and supply-voltage
+   droop under load are still not modeled, and the pendulum side has no thermal state at
+   all yet.
 5. **No contact/end-stop mechanics.** The linear actuator has an end-of-travel mode in the
    params, but the plant itself still has no collision/contact model.
 
@@ -108,9 +113,13 @@ interpolation.
    mechanical step exactly at predicted sensor events and pulse boundary times.  That would
    reduce small timing errors in controller/plant interaction without changing firmware-like
    fixed-tick behavior by default.
-4. **Thermal resistance model.** Track copper temperature, update winding resistance, and
-   feed that into both current dynamics and force calibration.  This matters because the
-   force map is current-based but real hardware is voltage/PWM/temperature limited.
+4. **Thermal resistance model -- implemented for the linear stepper.** Copper temperature
+   now tracks each coil's own i^2*R dissipation and feeds back into `"rl"` current
+   dynamics (`docs/DESIGN_LINEAR.md` section 2.4); the design optimizer runs with it on.
+   Not yet extended to the pendulum, and `thermal_resistance_k_per_w` has no geometry-
+   derived calibration (unlike `thermal_mass_j_per_k`, which comes from the winding's own
+   copper volume) -- still a placeholder pending a real measurement. Bus-voltage droop
+   under load and driver current limits remain unmodeled.
 5. **End-stop/contact model for the linear actuator.** Add configurable hard stops with
    restitution/damping, or soft bumpers if the physical design uses compliant stops.
 6. **Reference integrator mode.** Keep the current deterministic fixed-step engine for

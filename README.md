@@ -1,17 +1,40 @@
 # EMAC Phase 0 Host Simulator
 
 This repository is currently a Phase 0 host-only simulator for an event-first
-electromagnetic actuator control library. It models a soft-iron, attract-only
-magnetic pendulum and validates the estimator/supervisor loop before firmware is
-written.
+electromagnetic actuator control library. It models two geometries built from the
+same shared primitives (see `docs/DESIGN_LINEAR.md` section 1 for exactly what's
+shared and what isn't):
+
+- a **soft-iron, attract-only magnetic pendulum**, one bottom coil + one bottom
+  photogate (`docs/DESIGN.md`) -- the original Phase 0 target, and
+- a **linear one-way stepper** (coilgun-style): a permanent-magnet slug pulled
+  through a tube by N air-core coils firing in sequence, sensed by photogates
+  between them (`docs/DESIGN_LINEAR.md`).
+
+Both validate the estimator/supervisor control loop before firmware is written.
+The linear stepper additionally has a **design-space optimizer**
+(`docs/DESIGN_OPTIMIZER.md`) that searches driver/winding/magnet/topology knobs
+to maximize slug exit speed, using a physically-grounded parametric model
+(turns and dimensions genuinely trade off against resistance/inductance/thrust,
+not just "more is better").
 
 The immediate goal is a configurable **virtual actuator lab**: define fictional
-pendulum, gate, coil, driver, and controller values in a TOML file, run the sim on
-a PC, inspect the plots/visualizer, and use the results to guide later hardware.
+pendulum/stepper, gate, coil, driver, and controller values in a TOML file, run
+the sim on a PC, inspect the plots/visualizer, and use the results to guide
+later hardware.
 
 The future hardware target remains the one documented in `docs/DESIGN.md`:
 ESP32-S3, hardware timer capture for the photogate, and a unipolar coil power
 stage for a soft-iron bob.
+
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Firmware/hardware design spec: event-first architecture, ESP32-S3 target, control-law derivations. |
+| [`docs/DESIGN_LINEAR.md`](docs/DESIGN_LINEAR.md) | Linear one-way stepper: physics, electrical/thermal dynamics, estimator, supervisor. |
+| [`docs/DESIGN_OPTIMIZER.md`](docs/DESIGN_OPTIMIZER.md) | Design-space optimizer: the physical winding/magnet model, knobs, and how to run it. |
+| [`docs/PHYSICS_ENGINE_ANALYSIS.md`](docs/PHYSICS_ENGINE_ANALYSIS.md) | Host physics engine's numerical methods (integrator, event interpolation), known limits, and roadmap. |
 
 ## Setup
 
@@ -37,6 +60,13 @@ The legacy fixed-demo command still works and uses the built-in Phase 0 defaults
 emac-phase0 --no-plots
 ```
 
+`emac-sim` dispatches on the config's `[sim] kind` -- the same command also runs the
+linear one-way stepper, just by pointing it at a different config:
+
+```powershell
+emac-sim --config examples/configs/linear_stepper_5coil.toml --outdir build/linear
+```
+
 ## Run the Visual Simulator
 
 Generate a standalone browser visualizer from the default Phase 0 scenario:
@@ -55,6 +85,20 @@ If the console script is not on `PATH`, use the module entrypoint:
 
 ```powershell
 python -m emac_sim.visual --config examples/configs/pendulum_softiron_1gate.toml --outdir build/visual
+```
+
+`emac-visual`'s interactive tube-canvas animation for the linear stepper isn't built yet
+(`docs/DESIGN_LINEAR.md` section 6) -- use `emac-sim`'s static plots for that geometry.
+
+## Run the Design Optimizer
+
+Search driver voltage, coil turns/dimensions, current waveform, single-ended vs. H-bridge
+switching, coil count, and magnet properties to maximize the linear stepper's slug exit
+speed (see `docs/DESIGN_OPTIMIZER.md` for what each knob means and how the search is
+scoped):
+
+```powershell
+emac-optimize --maxiter 25 --popsize 15
 ```
 
 The legacy entrypoint still works:

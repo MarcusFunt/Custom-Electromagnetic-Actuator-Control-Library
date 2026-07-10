@@ -539,7 +539,7 @@ starting BOM:
 | Bus | `V_bus` 12–24 V (pick to satisfy `slew_max < V_bus/L_c`) | Caps achievable `di/dt` |
 | Coil | measure `L_c`, `R` | Set `slew_max`, `τ_r ≳ 3L_c/R`, PWM freq |
 | **Current sense** | low-side shunt + INA240 (or INA-series) sized for `I_max`, PWM-synchronous ADC sample | **Required** for the closed current loop and overcurrent fault |
-| **Temp sense** | coil-mounted NTC, *or* a first-order thermal estimator `T += (i²R − (T−T_amb)/R_th)·dt/C_th` | **Required** for overtemp/derate; copper R rises ~0.39 %/°C, which shifts the soft-iron `f(i)` map — track `R(T)` |
+| **Temp sense** | coil-mounted NTC, *or* a first-order thermal estimator `T += (i²R − (T−T_amb)/R_th)·dt/C_th` | **Required** for overtemp/derate; copper R rises ~0.39 %/°C, which shifts the soft-iron `f(i)` map — track `R(T)` (the host simulator now models exactly this estimator for the linear stepper, opt-in — `docs/DESIGN_LINEAR.md` section 2.4 — as a pre-hardware sanity check, not a substitute for real sensing) |
 | Gate | phototransistor/photodiode + comparator with **Schmitt hysteresis**, `t_deb ≪ Δt_block,min` | Clean single edges into the capture pin |
 
 Fill in `V_bus`, `L_c`, `R`, `I_max`, PWM frequency, dead-time, and the timer/pin map,
