@@ -41,6 +41,7 @@ class PendulumParams:
         return self.I * self.omega0 / self.Q
 
 
+
 def q_shape(theta: float, theta_c: float) -> float:
     """Odd, RESTORING torque shape: 0 at theta=0, magnitude 1 at +/- theta_c, decays outside.
 
@@ -53,11 +54,13 @@ def q_shape(theta: float, theta_c: float) -> float:
     return -u * math.exp(0.5) * math.exp(-0.5 * u * u)
 
 
+
 def f_current(i: float, p: PendulumParams) -> float:
     """Attract-only, quadratic-with-saturation current law. Returns a force scale >= 0."""
     if i <= 0.0:
         return 0.0
     return p.Cmag * (i * i) / (1.0 + (i / p.i_sat) ** 2)
+
 
 
 def f_current_pm(i: float, k_a: float) -> float:
@@ -68,9 +71,11 @@ def f_current_pm(i: float, k_a: float) -> float:
     return k_a * i
 
 
+
 def tau_mag(theta: float, i: float, p: PendulumParams) -> float:
     """Magnetic torque about the pivot. Always RESTORING (toward center) when i>0."""
     return q_shape(theta, p.theta_c) * f_current(i, p)
+
 
 
 def current_for(theta: float, tau_desired: float, p: PendulumParams) -> float:
@@ -100,24 +105,54 @@ def current_for(theta: float, tau_desired: float, p: PendulumParams) -> float:
     return math.sqrt(y / denom)
 
 
-def alpha(theta: float, omega: float, i: float, p: PendulumParams) -> float:
-    """Angular acceleration = net torque / inertia."""
-    tau = -p.m * p.g * p.L * math.sin(theta) - p.b * omega + tau_mag(theta, i, p)
+
+def conservative_alpha(theta: float, i: float, p: PendulumParams) -> float:
+    """Angular acceleration from position-dependent torques only.
+
+    This excludes viscous damping so the integrator can apply the linear damping part as
+    an exact exponential split.  Keeping the conservative term separate also makes energy
+    checks clearer: with i=0 and Q=inf/very large, this is the nonlinear pendulum ODE.
+    """
+    tau = -p.m * p.g * p.L * math.sin(theta) + tau_mag(theta, i, p)
     return tau / p.I
 
 
+
+def alpha(theta: float, omega: float, i: float, p: PendulumParams) -> float:
+    """Angular acceleration = net torque / inertia, including linear viscous damping."""
+    return conservative_alpha(theta, i, p) - (p.b / p.I) * omega
+
+
+
 def step(theta: float, omega: float, i: float, dt: float, p: PendulumParams):
-    """One semi-implicit (symplectic) Euler step. Conserves energy far better than
-    explicit Euler, which is essential for a lightly-damped oscillator."""
-    a = alpha(theta, omega, i, p)
-    omega_new = omega + a * dt
-    theta_new = theta + omega_new * dt
+    """One damped velocity-Verlet step with exact linear-damping splitting.
+
+    The previous integrator was semi-implicit Euler: robust and symplectic for the
+    undamped oscillator, but only first-order accurate.  This update uses a kick-drift-kick
+    velocity-Verlet core (second-order for the conservative pendulum+magnet torques) and
+    wraps it in half-step exact exponential damping.  Current is still treated as
+    piecewise-constant over the tick, matching the supervisor's sampled-current model.
+    """
+    if dt == 0.0:
+        return theta, omega
+
+    gamma = p.b / p.I if p.I > 0.0 else 0.0
+    damp_half = math.exp(-0.5 * gamma * dt) if gamma > 0.0 else 1.0
+
+    omega_d = omega * damp_half
+    a0 = conservative_alpha(theta, i, p)
+    omega_half = omega_d + 0.5 * a0 * dt
+    theta_new = theta + omega_half * dt
+    a1 = conservative_alpha(theta_new, i, p)
+    omega_new = (omega_half + 0.5 * a1 * dt) * damp_half
     return theta_new, omega_new
+
 
 
 def energy(theta: float, omega: float, p: PendulumParams) -> float:
     """Total mechanical energy: kinetic + gravitational potential (zero at bottom)."""
     return 0.5 * p.I * omega * omega + p.m * p.g * p.L * (1.0 - math.cos(theta))
+
 
 
 def amplitude_from_energy(E: float, p: PendulumParams) -> float:
@@ -127,8 +162,10 @@ def amplitude_from_energy(E: float, p: PendulumParams) -> float:
     return math.acos(c)
 
 
+
 def energy_for_amplitude(A: float, p: PendulumParams) -> float:
     return p.m * p.g * p.L * (1.0 - math.cos(A))
+
 
 
 def rl_current_step(i: float, v_applied: float, r: float, l: float, dt: float) -> float:

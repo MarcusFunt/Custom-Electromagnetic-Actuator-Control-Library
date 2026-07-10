@@ -78,8 +78,10 @@ class GateStation:
     w_eff: float = 0.004   # m, effective blocked width -- linear analog of dalpha
 
 
+
 def default_coil_stations(pitch: float = 0.05, n: int = 5, **kwargs) -> tuple[CoilStation, ...]:
     return tuple(CoilStation(position_m=k * pitch, **kwargs) for k in range(n))
+
 
 
 def default_gate_stations(pitch: float = 0.05, n_coils: int = 5, **kwargs) -> tuple[GateStation, ...]:
@@ -138,6 +140,7 @@ class LinearActuatorParams:
     ambient_temperature_c: float = 20.0
 
 
+
 def net_force(x: float, currents: Sequence[float], p: LinearActuatorParams) -> float:
     """Sum of every energized coil's local, odd, zero-at-its-own-center coupling toward
     that coil's position -- reluctance term (f_current) plus PM term (f_current_pm),
@@ -153,18 +156,40 @@ def net_force(x: float, currents: Sequence[float], p: LinearActuatorParams) -> f
     return total
 
 
+
+def undamped_accel(x: float, currents: Sequence[float], p: LinearActuatorParams) -> float:
+    """Acceleration from position-dependent coil/pressure forces only."""
+    return net_force(x, currents, p) / p.mass_kg
+
+
+
 def accel(x: float, v: float, currents: Sequence[float], p: LinearActuatorParams) -> float:
-    return (net_force(x, currents, p) - p.damping_n_per_mps * v) / p.mass_kg
+    return undamped_accel(x, currents, p) - (p.damping_n_per_mps / p.mass_kg) * v
+
 
 
 def step(x: float, v: float, currents: Sequence[float], dt: float, p: LinearActuatorParams):
-    """One semi-implicit (symplectic) Euler step -- same integrator and rationale as
-    plant.step(): explicit Euler would inject energy into what is otherwise a lightly
-    damped, momentum-conserving slide."""
-    a = accel(x, v, currents, p)
-    v_new = v + a * dt
-    x_new = x + v_new * dt
+    """One damped velocity-Verlet step -- same accuracy upgrade as plant.step().
+
+    The force field is evaluated at both ends of the drift, while linear viscous damping is
+    applied as exact half-step exponential factors.  This is still cheap and deterministic,
+    but reduces timestep sensitivity versus first-order semi-implicit Euler for fast/light
+    candidate designs and near narrow coil lobes.
+    """
+    if dt == 0.0:
+        return x, v
+
+    gamma = p.damping_n_per_mps / p.mass_kg if p.mass_kg > 0.0 else 0.0
+    damp_half = math.exp(-0.5 * gamma * dt) if gamma > 0.0 else 1.0
+
+    v_d = v * damp_half
+    a0 = undamped_accel(x, currents, p)
+    v_half = v_d + 0.5 * a0 * dt
+    x_new = x + v_half * dt
+    a1 = undamped_accel(x_new, currents, p)
+    v_new = (v_half + 0.5 * a1 * dt) * damp_half
     return x_new, v_new
+
 
 
 def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
@@ -211,6 +236,7 @@ def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
     v_min = -bus_voltage_v if bipolar else 0.0
     v_applied = max(v_min, min(bus_voltage_v, v_needed))
     return rl_current_step(i_actual, v_applied, r, l, dt)
+
 
 
 def kinetic_energy(v: float, p: LinearActuatorParams) -> float:
