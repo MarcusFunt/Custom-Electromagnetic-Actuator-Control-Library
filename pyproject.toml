@@ -23,12 +23,16 @@ dependencies = [
 dev = [
   "pytest>=8"
 ]
+mcp = [
+  "mcp>=1.2.0"
+]
 
 [project.scripts]
 emac-phase0 = "emac_sim.cli:main"
 emac-sim = "emac_sim.cli:main"
 emac-visual = "emac_sim.visual:main"
 emac-optimize = "emac_sim.optimize_design:main"
+emac-mcp = "emac_sim.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["tools/python"]

@@ -34,6 +34,7 @@ stage for a soft-iron bob.
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Firmware/hardware design spec: event-first architecture, ESP32-S3 target, control-law derivations. |
 | [`docs/DESIGN_LINEAR.md`](docs/DESIGN_LINEAR.md) | Linear one-way stepper: physics, electrical/thermal dynamics, estimator, supervisor. |
 | [`docs/DESIGN_OPTIMIZER.md`](docs/DESIGN_OPTIMIZER.md) | Design-space optimizer: the physical winding/magnet model, knobs, and how to run it. |
+| [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md) | Model Context Protocol interface: drive the optimizer from an LLM client with live progress/fault-rate reporting, plus a results dashboard artifact. |
 | [`docs/PHYSICS_ENGINE_ANALYSIS.md`](docs/PHYSICS_ENGINE_ANALYSIS.md) | Host physics engine's numerical methods (integrator, event interpolation), known limits, and roadmap. |
 
 ## Setup
@@ -106,6 +107,19 @@ The legacy entrypoint still works:
 ```powershell
 python tools/python/run_phase0.py
 ```
+
+## Drive the Optimizer from an LLM Client (MCP)
+
+```powershell
+python -m pip install -e .[mcp]
+claude mcp add emac -- emac-mcp
+```
+
+Exposes `run_optimization`, `simulate_design_detailed`, `sensitivity_sweep`, and
+`get_latest_result` as MCP tools, with live progress and per-generation fault-rate
+warnings so a long search's health is visible while it's still running. See
+`docs/MCP_SERVER.md` and the companion **EMAC Optimizer Dashboard** artifact for
+visualizing `build/optimize_results/latest.json`.
 
 ## Verify
 
