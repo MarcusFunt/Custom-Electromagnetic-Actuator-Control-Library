@@ -303,9 +303,13 @@ slug *during* the very approach it's predicting the timing of, so a constant-vel
 guess systematically predicts arrival too late; the stale cutoff then leaves the coil
 still energized once the slug has already crossed its center, where the same "attract"
 current pulls backward instead (`q_shape`'s sign has flipped) -- enough to fully reverse
-a high-thrust design at a coarse simulation `dt`. See `docs/DESIGN_OPTIMIZER.md` section
-1.2 for the full failure mode and why the correction has to use the energy *actually
-deliverable* at the current-limited `i_peak`, not the raw commanded energy.
+a high-thrust design at a coarse simulation `dt`. The correction's own energy assumption is
+in turn capped at the slug's current kinetic energy (at most doubling it in one lobe pass)
+-- an uncapped correction can still overshoot the other way for a light, high-current
+design, predicting arrival implausibly early and firing the departure kick too soon. See
+`docs/DESIGN_OPTIMIZER.md` sections 1.2 and 1.3 for both failure modes and why the
+correction has to use the energy *actually deliverable* at the current-limited `i_peak`,
+not the raw commanded energy.
 
 **Startup is structurally easier than the pendulum's.** `DESIGN.md` section 4.6: a
 soft-iron pendulum bob *always* rests at bottom-center (gravity puts it there), which is

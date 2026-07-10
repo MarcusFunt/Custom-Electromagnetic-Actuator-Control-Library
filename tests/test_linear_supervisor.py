@@ -89,6 +89,31 @@ def test_run_step_schedules_pump_ending_at_predicted_coil_arrival():
     assert out.cmd.t1 == pytest.approx(max(0.0, t_arrival - sup.phase_advance_s))
 
 
+def test_predict_arrival_caps_the_assumed_energy_at_the_slugs_own_kinetic_energy():
+    """A second, independent dt-instability failure caught after the deliverable-energy
+    fix above: for a light slug, even the actually-deliverable energy can still be many
+    times the slug's current kinetic energy (K_pump's calibration assumes a full lobe-
+    spanning pulse, which the resulting short T_p may not leave enough time to actually
+    deliver -- see the module docstring). Predicting arrival from an unbounded energy
+    assumption can put it absurdly early, firing the departure-repel kick while the slug
+    is still well before the coil. Capping the energy used in the correction at the
+    slug's own current KE (at most doubling it in one lobe pass) should make the
+    prediction insensitive to further increases in the commanded energy beyond that cap."""
+    p = LinearActuatorParams(mass_kg=0.01563)
+    sup = StepperSupervisor(p)
+    est = make_estimator(p)
+    est.on_gate(0, t=0.0, pulse_width=p.gates[0].w_eff / 4.334)   # v0 = 4.334 m/s
+
+    e0 = 0.5 * p.mass_kg * 4.334 * 4.334
+    t_at_cap = sup._predict_arrival(est, p.coils[0].position_m, e0)
+    t_far_beyond_cap = sup._predict_arrival(est, p.coils[0].position_m, 16.0 * e0)
+    t_naive = est.time_to_reach(p.coils[0].position_m)
+
+    assert t_at_cap == pytest.approx(t_far_beyond_cap)     # capped: no further effect
+    assert t_at_cap > 0.0
+    assert t_at_cap < t_naive     # still corrects toward an earlier arrival than naive
+
+
 def test_coast_end_of_travel_stops_after_last_coil():
     p = LinearActuatorParams(end_of_travel="coast")
     sup = StepperSupervisor(p)

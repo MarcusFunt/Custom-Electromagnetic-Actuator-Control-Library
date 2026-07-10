@@ -164,6 +164,39 @@ against the design that exposed it: all 8 gates now fire, with closely-convergin
 speeds, across `dt` from `2e-5` to `1e-3` (previously only the entry gate fired at any
 `dt` >= `5e-4`, with the slug rocketing backward out of the tube afterward).
 
+### 1.3 A third refinement: capping the correction's own energy assumption
+
+The deliverable-energy fix above wasn't the end of it: a fresh search under the (separately
+merged) velocity-Verlet integrator turned up a design -- light slug, 20 coils, high current
+and turns -- whose *reported* speed (79.5 m/s at the search's own `dt`) collapsed to 4.3 m/s
+under a dt-refinement check, the same red flag that caught 1.1 and 1.2. Root cause was the
+same `_predict_arrival` correction overshooting in the SAME direction as 1.2 (arrival
+predicted too early, departure kick firing while still approaching) but for a subtler
+reason: `_i_peak_for_energy`'s deliverable energy is still computed from `K_pump`'s
+calibration, which assumes a full lobe-spanning pulse -- it doesn't account for the fact
+that the resulting `T_p` (sized FROM this same corrected `t_arrival`, a circular dependency)
+can end up too short for the RL current loop to ever actually reach, let alone hold, that
+current. For that specific design, the deliverable-energy estimate was **16x the slug's own
+current kinetic energy** -- an implausible one-lobe energy injection that was never really
+delivered, yet the schedule trusted it anyway.
+
+The fix: cap the energy the correction is allowed to assume at the slug's own current
+kinetic energy (`dE_for_correction = min(dE_deliverable, 0.5*mass*v0^2)`) -- at most
+doubling it over one lobe transit, a much safer bound for a single-lobe SUVAT
+extrapolation to stay inside. Re-verified against both the design that exposed this and the
+original 1.2 design: both now converge cleanly across `dt` from `2e-4` down to `5e-6` (the
+new design settles to ~77-79 m/s; the original, unaffected by this cap in practice, stays at
+~16.2-16.5 m/s as before).
+
+**The general lesson, stated once:** any one-shot correction to an estimator's prediction
+that itself depends on an energy/impulse assumption needs a plausibility bound, not just a
+better formula -- an unbounded correction can always find some corner of an 11-dimensional
+search space where its own assumption breaks down. The `optimize()` high-fidelity
+re-verification step (section 4) is what keeps surfacing these; treat any large gap between
+`search_reported` and the re-verified `speed` in an `optimize_result*.json` as a prompt to
+dt-refine that specific design before trusting it, not just this project's history of three
+strikes.
+
 ## 2. The eleven knobs
 
 | Knob | Meaning | Default bounds |

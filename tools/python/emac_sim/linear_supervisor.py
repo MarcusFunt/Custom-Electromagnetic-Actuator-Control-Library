@@ -254,12 +254,29 @@ class StepperSupervisor:
         for far more than i_max can supply, and using the unreachable raw dE overshoots the
         correction just as badly the other way (predicts arrival too EARLY, firing the
         departure-repel kick while still approaching -- caught in testing right after fixing
-        the late-cutoff case)."""
+        the late-cutoff case).
+
+        dE_cmd is further capped at the slug's OWN current kinetic energy (at most doubling
+        it over one lobe transit) before it enters the correction. Even the deliverable-
+        energy fix above can still overshoot badly for a light slug / high-current design:
+        K_pump's energy-per-A(^2) calibration assumes a full lobe-spanning pulse, but the
+        resulting T_p (sized from THIS SAME corrected t_arrival, a circular dependency) can
+        end up far too short for the RL current loop to ever actually reach, let alone hold,
+        that much current -- so the assumed dE is never really delivered, yet the schedule
+        still trusted it, predicting an arrival many multiples of v0 that never happens and
+        firing the departure kick while genuinely still approaching (caught via a second,
+        independent design after the first fix: 79.5 m/s reported at the search's own dt,
+        4.3 m/s once dt was refined -- one lobe pass assumed to inject 16x the slug's
+        existing kinetic energy). A same-order-of-magnitude energy injection is a much
+        safer, still physically meaningful bound for a single-lobe SUVAT extrapolation to
+        stay inside."""
         if not est.have or abs(est.v_last) < 1e-9:
             return None
         v0 = est.v_last
-        if dE_cmd > 1e-12:
-            v1 = math.sqrt(v0 * v0 + 2.0 * dE_cmd / self.p.mass_kg)
+        e0 = 0.5 * self.p.mass_kg * v0 * v0
+        dE_for_correction = min(dE_cmd, e0)
+        if dE_for_correction > 1e-12:
+            v1 = math.sqrt(v0 * v0 + 2.0 * dE_for_correction / self.p.mass_kg)
             v_eff = 0.5 * (v0 + v1)
         else:
             v_eff = v0
