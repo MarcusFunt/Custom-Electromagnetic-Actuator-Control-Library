@@ -22,22 +22,32 @@ linear_supervisor  : forward-only commutation supervisor with a startup bootstra
 linear_sim         : closed-loop simulator, linear analog of sim.py
 """
 
-from .plant import PendulumParams, tau_mag, q_shape, f_current, f_current_pm, current_for, rl_current_step
+from .plant import (
+    PendulumParams,
+    tau_mag,
+    q_shape,
+    f_current,
+    f_current_pm,
+    current_for,
+    conservative_alpha,
+    rl_current_step,
+)
 from .estimator import Tier1Estimator
+from .numerics import hermite_event_fraction
 from .supervisor import EnergySupervisor, PulseCmd, current_at, envelope_average_linear
 from .sim import Simulator, SimLog
 
-from .linear_plant import LinearActuatorParams, CoilStation, GateStation, coil_current_step
+from .linear_plant import LinearActuatorParams, CoilStation, GateStation, coil_current_step, undamped_accel
 from .linear_estimator import LinearStepperEstimator
 from .linear_supervisor import StepperSupervisor, StepperOutput
 from .linear_sim import LinearSimulator, LinearSimLog
 
 __all__ = [
     "PendulumParams", "tau_mag", "q_shape", "f_current", "f_current_pm", "current_for",
-    "rl_current_step",
+    "conservative_alpha", "rl_current_step", "hermite_event_fraction",
     "Tier1Estimator", "EnergySupervisor", "PulseCmd", "current_at", "envelope_average_linear",
     "Simulator", "SimLog",
-    "LinearActuatorParams", "CoilStation", "GateStation", "coil_current_step",
+    "LinearActuatorParams", "CoilStation", "GateStation", "coil_current_step", "undamped_accel",
     "LinearStepperEstimator", "StepperSupervisor", "StepperOutput",
     "LinearSimulator", "LinearSimLog",
 ]

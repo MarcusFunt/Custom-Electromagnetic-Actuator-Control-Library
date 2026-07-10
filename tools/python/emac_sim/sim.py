@@ -14,6 +14,7 @@ from typing import Callable, List
 from . import plant
 from .plant import PendulumParams
 from .estimator import Tier1Estimator
+from .numerics import hermite_event_fraction
 from .supervisor import EnergySupervisor, PulseCmd, current_at
 
 
@@ -72,10 +73,8 @@ class Simulator:
                 (theta > 0.0 and theta_n <= 0.0) or (theta < 0.0 and theta_n >= 0.0)
             )
             if crossed:
-                denom = (theta - theta_n)
-                frac = theta / denom if denom != 0.0 else 0.0
+                frac, omega_cross = hermite_event_fraction(theta, omega, theta_n, omega_n, self.dt)
                 t_cross = t + frac * self.dt
-                omega_cross = omega + frac * (omega_n - omega)
                 v = abs(omega_cross)
                 accepted = False
                 if v > 1e-6 and (t_cross - last_cross_t) >= min_gap:
