@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMAC Optimizer Dashboard</title>
+<style>
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-alt: #eef0f3;
+  --border: #d8dce3;
+  --text: #171b21;
+  --text-muted: #626b7a;
+  --accent: #0e8f83;
+  --accent-soft: #d8f0ec;
+  --good: #1f9d55;
+  --good-soft: #dcf3e4;
+  --warn: #b5790f;
+  --warn-soft: #faedd2;
+  --bad: #c94a4a;
+  --bad-soft: #fbe2e2;
+  --neutral-soft: #e7e9ed;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+  --sans: -apple-system, "Segoe UI", "Inter", Helvetica, Arial, sans-serif;
+  --grid-lo: 244, 232, 208;
+  --grid-hi: 14, 143, 131;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10141b; --surface: #171d27; --surface-alt: #1d2430; --border: #2b3340;
+    --text: #e7eaf0; --text-muted: #8b93a4; --accent: #4fd1c5; --accent-soft: #163531;
+    --good: #6ee7a8; --good-soft: #143323; --warn: #f0b357; --warn-soft: #3a2c12;
+    --bad: #f2777a; --bad-soft: #3a1c1e; --neutral-soft: #232a35;
+    --grid-lo: 45, 40, 32; --grid-hi: 79, 209, 197;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141b; --surface: #171d27; --surface-alt: #1d2430; --border: #2b3340;
+  --text: #e7eaf0; --text-muted: #8b93a4; --accent: #4fd1c5; --accent-soft: #163531;
+  --good: #6ee7a8; --good-soft: #143323; --warn: #f0b357; --warn-soft: #3a2c12;
+  --bad: #f2777a; --bad-soft: #3a1c1e; --neutral-soft: #232a35;
+  --grid-lo: 45, 40, 32; --grid-hi: 79, 209, 197;
+}
+:root[data-theme="light"] {
+  --bg: #f5f6f8; --surface: #ffffff; --surface-alt: #eef0f3; --border: #d8dce3;
+  --text: #171b21; --text-muted: #626b7a; --accent: #0e8f83; --accent-soft: #d8f0ec;
+  --good: #1f9d55; --good-soft: #dcf3e4; --warn: #b5790f; --warn-soft: #faedd2;
+  --bad: #c94a4a; --bad-soft: #fbe2e2; --neutral-soft: #e7e9ed;
+  --grid-lo: 244, 232, 208; --grid-hi: 14, 143, 131;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.5;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 2.2rem 1.5rem 4rem;
+}
+::selection { background: var(--accent-soft); }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.5rem;
+}
+h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; margin: 0 0 0.4rem; }
+.subtitle { color: var(--text-muted); font-size: 0.95rem; max-width: 68ch; margin: 0 0 1.6rem; }
+.subtitle code { font-family: var(--mono); font-size: 0.88em; }
+
+/* ---- loader toolbar ---- */
+.loader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1.6rem;
+}
+.btn {
+  font-family: var(--sans);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #061715; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.loader .divider { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
+.loader .hint { font-size: 0.78rem; color: var(--text-muted); }
+.live-indicator {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-family: var(--mono); font-size: 0.76rem; color: var(--text-muted);
+  margin-left: auto;
+}
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.live-dot.on { background: var(--good); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .live-dot.on { animation: none; } }
+
+.paste-panel {
+  display: none;
+  width: 100%;
+  margin-top: 0.7rem;
+  gap: 0.5rem;
+  flex-direction: column;
+}
+.paste-panel.open { display: flex; }
+.paste-panel textarea {
+  width: 100%; min-height: 90px; resize: vertical;
+  font-family: var(--mono); font-size: 0.78rem;
+  background: var(--surface-alt); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; padding: 0.6rem;
+}
+.paste-panel .row { display: flex; gap: 0.5rem; }
+
+body.drop-active::after {
+  content: "Drop the results JSON file anywhere to load it";
+  position: fixed; inset: 0; z-index: 999;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  font-family: var(--mono); font-size: 1rem; color: var(--accent);
+  border: 3px dashed var(--accent); margin: 1rem;
+}
+
+/* ---- empty state ---- */
+.empty {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.empty b { color: var(--text); }
+
+/* ---- status hero ---- */
+.hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.4rem 1.6rem;
+  margin-bottom: 1.6rem;
+}
+.hero-top { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.pill {
+  font-family: var(--mono); font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 0.3rem 0.65rem; border-radius: 999px;
+}
+.pill.running { background: var(--warn-soft); color: var(--warn); }
+.pill.done { background: var(--good-soft); color: var(--good); }
+.pill.error { background: var(--bad-soft); color: var(--bad); }
+.pill.neutral { background: var(--neutral-soft); color: var(--text-muted); }
+.hero-best {
+  font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.hero-best span { font-size: 0.9rem; font-weight: 500; color: var(--text-muted); }
+
+.progress-track {
+  height: 10px; border-radius: 999px; background: var(--surface-alt);
+  border: 1px solid var(--border); overflow: hidden; margin-bottom: 0.5rem;
+}
+.progress-fill {
+  height: 100%; background: var(--accent); border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.progress-fill.done { background: var(--good); }
+.progress-labels {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 0.76rem; color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.hero-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.8rem;
+}
+.stat { text-align: left; }
+.stat .k { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.stat .v { font-family: var(--mono); font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .v.warn { color: var(--warn); }
+.stat .v.bad { color: var(--bad); }
+
+/* ---- sections / cards ---- */
+section { margin-bottom: 2rem; }
+.section-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+  border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem;
+}
+.section-head h2 { font-size: 1.05rem; margin: 0; font-weight: 650; }
+.section-head .note { font-size: 0.78rem; color: var(--text-muted); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1.1rem 1.2rem;
+}
+.chart-wrap svg { display: block; width: 100%; height: 220px; }
+.chart-legend { display: flex; gap: 1.2rem; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; }
+.chart-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; }
+
+.spec-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem;
+}
+.spec-group {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+.spec-group .g-title {
+  font-family: var(--mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent); margin-bottom: 0.55rem;
+}
+.spec-row {
+  display: flex; justify-content: space-between; gap: 0.6rem;
+  font-size: 0.82rem; padding: 0.2rem 0;
+}
+.spec-row .k { color: var(--text-muted); }
+.spec-row .v { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+
+table.history-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.76rem; }
+table.history-table th, table.history-table td { padding: 0.4rem 0.6rem; text-align: right; font-variant-numeric: tabular-nums; }
+table.history-table th:first-child, table.history-table td:first-child { text-align: left; }
+table.history-table th { color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+table.history-table tr:nth-child(even) { background: var(--surface-alt); }
+.fault-hi { color: var(--bad); font-weight: 700; }
+
+.heatmap-wrap { overflow-x: auto; }
+table.heatmap { border-collapse: collapse; font-family: var(--mono); font-size: 0.72rem; }
+table.heatmap th, table.heatmap td { padding: 0.35rem 0.5rem; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.heatmap th { color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+table.heatmap td.row-label { text-align: right; border-right: 1px solid var(--border); color: var(--text-muted); padding-right: 0.7rem; }
+table.heatmap td.cell { border-radius: 3px; color: #0a0e12; font-weight: 600; }
+.corner { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+footer { border-top: 1px solid var(--border); padding-top: 1.1rem; font-size: 0.75rem; color: var(--text-muted); font-family: var(--mono); }
+footer p { max-width: 82ch; }
+.error-box { background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 0.8rem 1rem; font-family: var(--mono); font-size: 0.82rem; }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">emac_sim / mcp_server.py</p>
+<h1>EMAC Optimizer Dashboard</h1>
+<p class="subtitle">Live view of a design-space search running through the <code>run_optimization</code> MCP tool, or any saved <code>get_latest_result</code> / <code>simulate_design_detailed</code> / <code>sensitivity_sweep</code> snapshot. Point it at <code>build/optimize_results/latest.json</code> to watch a run in progress.</p>
+
+<div class="loader" id="loader">
+  <button class="btn primary" id="btn-open">Open results file…</button>
+  <input type="file" id="file-input" accept="application/json,.json" style="display:none" />
+  <button class="btn" id="btn-paste">Paste JSON…</button>
+  <div class="divider"></div>
+  <span class="hint">or drag a .json file anywhere on this page</span>
+  <div class="live-indicator" id="live-indicator">
+    <span class="live-dot" id="live-dot"></span>
+    <span id="live-text">no file loaded</span>
+  </div>
+  <div class="paste-panel" id="paste-panel">
+    <textarea id="paste-text" placeholder="Paste the JSON contents of a results file here…"></textarea>
+    <div class="row">
+      <button class="btn primary" id="btn-paste-load">Load pasted JSON</button>
+      <button class="btn" id="btn-paste-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="content">
+  <div class="empty">
+    <p><b>No results loaded yet.</b></p>
+    <p>Start a search with the <code>run_optimization</code> MCP tool, then open its
+    <code>build/optimize_results/latest.json</code> here. In Chrome/Edge, "Open results
+    file…" keeps watching the file and updates this page live as new generations complete;
+    other browsers can re-open or drop the file again to refresh.</p>
+  </div>
+</div>
+
+<footer>
+  <p>Auto-detects three JSON shapes: an optimizer status/result snapshot (has a "status"
+  field), a <code>simulate_design_detailed</code> time series (has "t"/"x"/"v" arrays), and
+  a <code>sensitivity_sweep</code> main-effect curve (has "knob"/"points") or a pairwise
+  interaction grid (has "knob_a"/"knob_b"/"grid") from <code>design_sensitivity.py</code>.
+  Nothing here is uploaded anywhere -- everything runs and stays in this page.</p>
+</footer>
+
+<script>
+const state = { handle: null, pollTimer: null, lastText: null };
+
+function fmtNum(v, digits) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  if (digits !== undefined) return v.toFixed(digits);
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}
+function fmtTime(s) {
+  if (s === null || s === undefined || !Number.isFinite(s)) return "—";
+  if (s < 90) return `${s.toFixed(0)}s`;
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return `${m}m ${r}s`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ---------------- shape detection + top-level render ---------------- */
+
+function detectShape(obj) {
+  if (obj && typeof obj === "object") {
+    if ("status" in obj) return "optimizer";
+    if (Array.isArray(obj.t) && Array.isArray(obj.x) && Array.isArray(obj.v)) return "timeseries";
+    if ("knob" in obj && Array.isArray(obj.points)) return "sweep";
+    if ("knob_a" in obj && "knob_b" in obj && Array.isArray(obj.grid)) return "interaction";
+  }
+  return "unknown";
+}
+
+function renderData(obj) {
+  const shape = detectShape(obj);
+  const content = document.getElementById("content");
+  if (shape === "optimizer") content.innerHTML = renderOptimizer(obj);
+  else if (shape === "timeseries") content.innerHTML = renderTimeseries(obj);
+  else if (shape === "sweep") content.innerHTML = renderSweep(obj);
+  else if (shape === "interaction") content.innerHTML = renderInteraction(obj);
+  else content.innerHTML = `<div class="error-box">Unrecognized JSON shape -- expected an optimizer
+    status snapshot, a simulate_design_detailed result, or a sensitivity_sweep /
+    interaction_sweep result. Got keys: ${escapeHtml(Object.keys(obj || {}).join(", "))}</div>`;
+}
+
+/* ---------------- optimizer status view ---------------- */
+
+const KNOB_GROUPS = [
+  { title: "driver", rows: [
+      ["bus_voltage_v", k => `${fmtNum(k.bus_voltage_v, 1)} V`],
+      ["driver_bipolar", k => k.driver_bipolar ? "H-bridge" : "half-bridge"],
+      ["pump_envelope", k => k.pump_envelope],
+      ["i_max_a", k => `${fmtNum(k.i_max_a, 1)} A`],
+  ]},
+  { title: "topology", rows: [
+      ["n_coils", k => `${k.n_coils}`],
+      ["tube_length_m", k => fmtNum(k.n_coils * k.coil_length_m, 4)],
+  ]},
+  { title: "coil winding", rows: [
+      ["turns", k => `${k.turns}`],
+      ["coil_length_m", k => fmtNum(k.coil_length_m, 5)],
+      ["radial_thickness_m", k => fmtNum(k.radial_thickness_m, 5)],
+  ]},
+  { title: "slug / magnet", rows: [
+      ["magnet_radius_m", k => fmtNum(k.magnet_radius_m, 5)],
+      ["magnet_length_m", k => fmtNum(k.magnet_length_m, 5)],
+      ["remanence_t", k => `${fmtNum(k.remanence_t, 3)} T`],
+  ]},
+];
+
+function renderKnobSpec(knobs) {
+  if (!knobs) return `<div class="empty">No best design found yet.</div>`;
+  return `<div class="spec-grid">${KNOB_GROUPS.map(g => `
+    <div class="spec-group">
+      <div class="g-title">${g.title}</div>
+      ${g.rows.map(([label, fn]) => `<div class="spec-row"><span class="k">${label}</span><span class="v">${fn(knobs)}</span></div>`).join("")}
+    </div>`).join("")}</div>`;
+}
+
+function convergenceChart(history) {
+  const w = 900, h = 220, pad = 34;
+  if (!history || !history.length) return `<div class="empty">No generations completed yet.</div>`;
+  const gens = history.map(p => p.generation);
+  const speeds = history.map(p => p.best_speed_so_far);
+  const faults = history.map(p => p.fault_fraction_this_gen);
+  const gMin = Math.min(...gens), gMax = Math.max(...gens);
+  const sMax = Math.max(...speeds, 1e-6) * 1.15;
+  const sx = g => pad + (gMax === gMin ? 0 : (g - gMin) / (gMax - gMin)) * (w - 2 * pad);
+  const syTop = h - pad - 70;   // convergence curve occupies the upper region
+  const syScale = s => (h - pad) - 70 - (s / sMax) * (h - 2 * pad - 70);
+  const line = gens.map((g, i) => `${i === 0 ? "M" : "L"}${sx(g).toFixed(1)},${syScale(speeds[i]).toFixed(1)}`).join(" ");
+  const fill = line + ` L${sx(gens[gens.length - 1]).toFixed(1)},${(h - pad - 70).toFixed(1)} L${sx(gens[0]).toFixed(1)},${(h - pad - 70).toFixed(1)} Z`;
+  const barW = Math.max(2, (w - 2 * pad) / gens.length * 0.6);
+  const barGap = (w - 2 * pad) / gens.length;
+  let bars = "";
+  gens.forEach((g, i) => {
+    const bh = faults[i] * 60;
+    const x = pad + i * barGap + (barGap - barW) / 2;
+    const y = h - pad - bh;
+    const isHigh = faults[i] >= 0.9;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${isHigh ? "var(--bad)" : "var(--border)"}" rx="1.5" />`;
+  });
+  let dots = "";
+  gens.forEach((g, i) => { dots += `<circle cx="${sx(g).toFixed(1)}" cy="${syScale(speeds[i]).toFixed(1)}" r="2.2" fill="var(--accent)" />`; });
+  return `<svg viewBox="0 0 ${w} ${h}">
+    <line x1="${pad}" y1="${(h - pad - 70).toFixed(1)}" x2="${w - pad}" y2="${(h - pad - 70).toFixed(1)}" stroke="var(--border)" />
+    <line x1="${pad}" y1="${(h - pad).toFixed(1)}" x2="${w - pad}" y2="${(h - pad).toFixed(1)}" stroke="var(--border)" />
+    <path d="${fill}" fill="var(--accent)" opacity="0.1" />
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" />
+    ${dots}
+    ${bars}
+    <text x="${pad}" y="16" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">best speed so far (m/s)</text>
+    <text x="${pad}" y="${(h - pad - 76).toFixed(1)}" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">fault % this gen</text>
+  </svg>`;
+}
+
+function renderOptimizer(obj) {
+  if (obj.status === "no_results_yet") {
+    return `<div class="empty"><p><b>No results yet.</b></p><p>This file exists but no search has written a snapshot to it. Start one with the <code>run_optimization</code> MCP tool.</p></div>`;
+  }
+  const isRunning = obj.status === "running";
+  const isDone = obj.status === "done";
+  const pillClass = isRunning ? "running" : isDone ? "done" : "neutral";
+  const pillText = isRunning ? "Running" : isDone ? "Done" : (obj.status || "unknown");
+  const pct = obj.maxiter ? Math.min(100, 100 * (obj.generation || 0) / obj.maxiter) : 0;
+  const faultOverall = obj.fault_fraction_overall || 0;
+  const faultClass = faultOverall >= 0.9 ? "bad" : faultOverall >= 0.5 ? "warn" : "";
+
+  const history = obj.history || [];
+  const historyRows = history.slice().reverse().map(h => `
+    <tr>
+      <td>${h.generation}</td>
+      <td>${h.evals_this_gen}</td>
+      <td class="${h.fault_fraction_this_gen >= 0.9 ? "fault-hi" : ""}">${(h.fault_fraction_this_gen * 100).toFixed(0)}%</td>
+      <td>${fmtNum(h.best_speed_so_far, 2)}</td>
+      <td>${fmtTime(h.elapsed_s)}</td>
+    </tr>`).join("");
+
+  return `
+    <div class="hero">
+      <div class="hero-top">
+        <span class="pill ${pillClass}">${pillText}</span>
+        <span style="font-family:var(--mono);font-size:0.82rem;color:var(--text-muted)">
+          seed ${obj.seed ?? "—"} · popsize ${obj.popsize ?? "—"} · maxiter ${obj.maxiter ?? "—"}
+        </span>
+        <span class="hero-best">${fmtNum(obj.best_speed_m_s, 2)} <span>m/s best${isDone ? " (re-verified)" : " so far"}</span></span>
+      </div>
+      <div class="progress-track"><div class="progress-fill ${isDone ? "done" : ""}" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="progress-labels">
+        <span>generation ${obj.generation ?? 0} / ${obj.maxiter ?? "?"}</span>
+        <span>${isRunning ? `ETA ${fmtTime(obj.eta_s)}` : isDone ? "complete" : ""}</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><div class="k">evaluations</div><div class="v">${obj.evals_total ?? "—"}</div></div>
+        <div class="stat"><div class="k">elapsed</div><div class="v">${fmtTime(obj.elapsed_s)}</div></div>
+        <div class="stat"><div class="k">fault rate</div><div class="v ${faultClass}">${(faultOverall * 100).toFixed(0)}%</div></div>
+        ${isDone && obj.best_speed_search_estimate_m_s !== undefined ? `<div class="stat"><div class="k">search estimate</div><div class="v">${fmtNum(obj.best_speed_search_estimate_m_s, 2)}</div></div>` : ""}
+      </div>
+    </div>
+
+    ${faultOverall >= 0.9 ? `<div class="error-box" style="margin-bottom:1.6rem">⚠ ${(faultOverall*100).toFixed(0)}% of candidates FAULTed or scored 0&nbsp;m/s -- bounds may be infeasible (tube length, current/voltage too low to bootstrap, etc.)</div>` : ""}
+
+    <section>
+      <div class="section-head"><h2>Convergence</h2><span class="note">best speed so far, and each generation's fault rate</span></div>
+      <div class="card chart-wrap">
+        ${convergenceChart(history)}
+        <div class="chart-legend">
+          <span><span class="sw" style="background:var(--accent)"></span>best speed so far (line)</span>
+          <span><span class="sw" style="background:var(--border)"></span>fault % this generation (bars)</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Current best design</h2><span class="note">${isDone ? "final, re-verified at high fidelity" : "best found so far -- may still improve"}</span></div>
+      ${renderKnobSpec(obj.best_knobs)}
+    </section>
+
+    ${history.length ? `<section>
+      <div class="section-head"><h2>Generation history</h2><span class="note">${history.length} generations recorded</span></div>
+      <div class="card" style="overflow-x:auto">
+        <table class="history-table">
+          <thead><tr><th>gen</th><th>evals</th><th>fault %</th><th>best (m/s)</th><th>elapsed</th></tr></thead>
+          <tbody>${historyRows}</tbody>
+        </table>
+      </div>
+    </section>` : ""}
+  `;
+}
+
+/* ---------------- time-series (simulate_design_detailed) view ---------------- */
+
+function seriesChart(t, series, colors, labels, height) {
+  const w = 900, h = height || 200, pad = 34;
+  if (!t.length) return "";
+  const tMin = Math.min(...t), tMax = Math.max(...t);
+  const allY = series.flat();
+  const yMin = Math.min(0, ...allY), yMax = Math.max(...allY, 1e-6) * 1.08;
+  const sx = x => pad + (tMax === tMin ? 0 : (x - tMin) / (tMax - tMin)) * (w - 2 * pad);
+  const sy = y => (h - pad) - ((y - yMin) / ((yMax - yMin) || 1)) * (h - 2 * pad);
+  let svg = `<line x1="${pad}" y1="${sy(0).toFixed(1)}" x2="${w - pad}" y2="${sy(0).toFixed(1)}" stroke="var(--border)" />`;
+  series.forEach((s, si) => {
+    const path = t.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(s[i]).toFixed(1)}`).join(" ");
+    svg += `<path d="${path}" fill="none" stroke="${colors[si]}" stroke-width="1.75" />`;
+  });
+  return `<svg viewBox="0 0 ${w} ${h}">${svg}</svg>
+    <div class="chart-legend">${labels.map((l, i) => `<span><span class="sw" style="background:${colors[i]}"></span>${l}</span>`).join("")}</div>`;
+}
+
+function renderTimeseries(obj) {
+  const t = obj.t || [];
+  const gateMarks = (obj.gate_t || []).map((gt, i) => `<span class="stat"><div class="k">gate ${obj.gate_index ? obj.gate_index[i] : i}</div><div class="v">${fmtNum(obj.gate_v[i], 2)} m/s @ ${fmtNum(gt, 4)}s</div></span>`).join("");
+  return `
+    <div class="hero">
+      <div class="hero-top">
+        <span class="pill ${obj.fault ? "error" : "done"}">${obj.fault ? "FAULT" : "completed"}</span>
+        <span class="hero-best">${fmtNum(obj.exit_speed_m_s, 2)} <span>m/s exit speed</span></span>
+      </div>
+      ${gateMarks ? `<div class="hero-stats">${gateMarks}</div>` : ""}
+    </div>
+    <section>
+      <div class="section-head"><h2>Position &amp; velocity</h2><span class="note">${t.length} samples</span></div>
+      <div class="card chart-wrap">${seriesChart(t, [obj.x || [], obj.v || []], ["var(--accent)", "var(--warn)"], ["position (m)", "velocity (m/s)"])}</div>
+    </section>
+    <section>
+      <div class="section-head"><h2>Active coil current &amp; temperature</h2></div>
+      <div class="card chart-wrap">${seriesChart(t, [obj.active_current || [], obj.active_temperature_c || []], ["var(--accent)", "var(--bad)"], ["current (A)", "temperature (°C)"])}</div>
+    </section>
+    <section>
+      <div class="section-head"><h2>Design</h2></div>
+      ${renderKnobSpec(obj.knobs)}
+    </section>
+  `;
+}
+
+/* ---------------- sensitivity sweep (single knob) view ---------------- */
+
+function renderSweep(obj) {
+  const pts = obj.points || [];
+  const isCat = pts.some(p => typeof p.value !== "number");
+  const w = 900, h = 240, pad = 40;
+  const xs = pts.map((p, i) => isCat ? i : p.value);
+  const ys = pts.map(p => p.speed);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMax = Math.max(...ys, 1e-6) * 1.1;
+  const sx = x => pad + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (w - 2 * pad);
+  const sy = y => (h - pad) - (y / yMax) * (h - 2 * pad);
+  const line = xs.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(ys[i]).toFixed(1)}`).join(" ");
+  const dots = xs.map((x, i) => `<circle cx="${sx(x).toFixed(1)}" cy="${sy(ys[i]).toFixed(1)}" r="3" fill="var(--accent)" />`).join("");
+  const labels = xs.map((x, i) => `<text x="${sx(x).toFixed(1)}" y="${h - pad + 16}" font-size="9" font-family="ui-monospace,monospace" fill="var(--text-muted)" text-anchor="middle">${escapeHtml(String(pts[i].value))}</text>`).join("");
+  return `
+    <div class="hero">
+      <div class="hero-top">
+        <span class="pill neutral">Sensitivity sweep</span>
+        <span class="hero-best" style="font-size:1.1rem">${obj.knob}</span>
+      </div>
+    </div>
+    <section>
+      <div class="section-head"><h2>Main-effect curve</h2><span class="note">every other knob held at baseline</span></div>
+      <div class="card chart-wrap">
+        <svg viewBox="0 0 ${w} ${h}">
+          <line x1="${pad}" y1="${(h - pad).toFixed(1)}" x2="${w - pad}" y2="${(h - pad).toFixed(1)}" stroke="var(--border)" />
+          <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" />
+          ${dots}${labels}
+        </svg>
+      </div>
+    </section>
+    <section>
+      <div class="section-head"><h2>Baseline design</h2></div>
+      ${renderKnobSpec(obj.baseline)}
+    </section>
+  `;
+}
+
+/* ---------------- pairwise interaction (design_sensitivity.interaction_sweep) view ---------------- */
+
+function heatmapColor(v, vMin, vMax) {
+  const t = vMax === vMin ? 0 : Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
+  const lo = getComputedStyle(document.documentElement).getPropertyValue("--grid-lo").trim().split(",").map(Number);
+  const hi = getComputedStyle(document.documentElement).getPropertyValue("--grid-hi").trim().split(",").map(Number);
+  const c = lo.map((l, i) => Math.round(l + (hi[i] - l) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function fmtAxisVal(v) {
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "string") return v;
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 10) return v.toFixed(1);
+  return v.toFixed(3);
+}
+function renderInteraction(obj) {
+  const flat = obj.grid.flat();
+  const vMin = Math.min(...flat), vMax = Math.max(...flat);
+  let rows = "";
+  obj.values_a.forEach((va, i) => {
+    rows += `<tr><td class="row-label">${fmtAxisVal(va)}</td>`;
+    obj.grid[i].forEach(v => { rows += `<td class="cell" style="background:${heatmapColor(v, vMin, vMax)}">${fmtNum(v)}</td>`; });
+    rows += `</tr>`;
+  });
+  const header = obj.values_b.map(vb => `<th>${fmtAxisVal(vb)}</th>`).join("");
+  return `
+    <div class="hero">
+      <div class="hero-top">
+        <span class="pill neutral">Interaction sweep</span>
+        <span class="hero-best" style="font-size:1.1rem">${obj.knob_a} × ${obj.knob_b}</span>
+      </div>
+    </div>
+    <section>
+      <div class="section-head"><h2>Exit speed grid (m/s)</h2></div>
+      <div class="card heatmap-wrap">
+        <table class="heatmap"><thead><tr><th class="corner"></th>${header}</tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </section>
+  `;
+}
+
+/* ---------------- loading plumbing: live handle / file input / drag-drop / paste ---------------- */
+
+function setLive(text, on) {
+  document.getElementById("live-text").textContent = text;
+  document.getElementById("live-dot").classList.toggle("on", !!on);
+}
+
+function tryRenderText(text) {
+  if (text === state.lastText) return;
+  state.lastText = text;
+  try {
+    renderData(JSON.parse(text));
+  } catch (e) {
+    document.getElementById("content").innerHTML = `<div class="error-box">Couldn't parse JSON: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function pollHandle() {
+  if (!state.handle) return;
+  try {
+    const file = await state.handle.getFile();
+    const text = await file.text();
+    tryRenderText(text);
+    setLive(`live: ${state.handle.name} (updated ${new Date().toLocaleTimeString()})`, true);
+  } catch (e) {
+    setLive(`lost access to file: ${e.message}`, false);
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+}
+
+async function openLive() {
+  if (window.showOpenFilePicker) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+      });
+      state.handle = handle;
+      if (state.pollTimer) clearInterval(state.pollTimer);
+      await pollHandle();
+      state.pollTimer = setInterval(pollHandle, 1000);
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return;   // user cancelled the picker
+      // fall through to the plain file input on any other error
+    }
+  }
+  document.getElementById("file-input").click();
+}
+
+function loadPlainFile(file) {
+  state.handle = null;
+  if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    tryRenderText(reader.result);
+    setLive(`loaded ${file.name} (${new Date().toLocaleTimeString()}, not live -- re-open to refresh)`, false);
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById("btn-open").addEventListener("click", openLive);
+document.getElementById("file-input").addEventListener("change", e => {
+  if (e.target.files[0]) loadPlainFile(e.target.files[0]);
+});
+document.getElementById("btn-paste").addEventListener("click", () => {
+  document.getElementById("paste-panel").classList.add("open");
+});
+document.getElementById("btn-paste-cancel").addEventListener("click", () => {
+  document.getElementById("paste-panel").classList.remove("open");
+});
+document.getElementById("btn-paste-load").addEventListener("click", () => {
+  const text = document.getElementById("paste-text").value;
+  if (!text.trim()) return;
+  state.handle = null;
+  if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+  tryRenderText(text);
+  setLive(`loaded from pasted JSON (${new Date().toLocaleTimeString()}, not live)`, false);
+  document.getElementById("paste-panel").classList.remove("open");
+});
+
+let dragDepth = 0;
+window.addEventListener("dragenter", e => { e.preventDefault(); dragDepth++; document.body.classList.add("drop-active"); });
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("dragleave", () => { dragDepth = Math.max(0, dragDepth - 1); if (dragDepth === 0) document.body.classList.remove("drop-active"); });
+window.addEventListener("drop", e => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("drop-active");
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) loadPlainFile(file);
+});
+
+if (!window.showOpenFilePicker) {
+  document.getElementById("btn-open").textContent = "Choose results file…";
+}
+</script>
+
+</body>
+</html>

@@ -42,23 +42,34 @@ throughput over live progress visibility.
 Every `run_optimization` call overwrites `build/optimize_results/latest.json` after
 **every generation**, not just at the end — `{"status": "running" | "done", "generation",
 "maxiter", "evals_total", "fault_fraction_overall", "best_speed_m_s", "best_knobs",
-"elapsed_s", "eta_s", "history": [...]}`. Reload it at any time, including mid-run, in the
-**EMAC Optimizer Dashboard** artifact (ask Claude to open it, or regenerate it from this
-doc) to see:
+"elapsed_s", "eta_s", "history": [...]}`.
 
-- a progress bar (generation / maxiter) with elapsed time and ETA,
-- the convergence curve (best speed so far) overlaid with each generation's fault
-  fraction, so a search that's stuck at 0 m/s or thrashing on infeasible candidates is
-  visible immediately instead of after a multi-minute run completes,
+## GUI: `tools/web/optimizer_dashboard.html`
+
+A self-contained, dependency-free HTML page (open it directly in a browser -- no server, no
+build step) that visualizes that live file, or any saved `simulate_design_detailed` /
+`sensitivity_sweep` / `design_sensitivity.interaction_sweep` result. It auto-detects which of
+the four JSON shapes it's been given.
+
+**Watching a long run live:** click "Open results file..." and select `build/optimize_results/
+latest.json`. In Chrome/Edge (the File System Access API) the page keeps a handle to that file
+and polls it every second, so the SAME open tab updates automatically as new generations
+complete -- no reloading, no re-running anything. Other browsers (Safari, Firefox) don't support
+that API; there, re-open or drag-and-drop the file again to refresh, or use the "Paste JSON..."
+box. Nothing is uploaded anywhere -- the file is read locally and stays in the page.
+
+What it shows for a running or finished search:
+- a status pill (Running / Done) and a progress bar (generation / maxiter) with elapsed time
+  and ETA,
+- an explicit warning banner if the overall fault rate is high (bounds likely infeasible),
+- the convergence curve (best speed so far) overlaid with each generation's fault fraction, so
+  a search that's stuck at 0 m/s or thrashing on infeasible candidates is visible immediately
+  instead of after a multi-minute run completes,
 - the current best design's full spec sheet, grouped the same way as
-  `optimize_design._print_design`.
+  `optimize_design._print_design` (driver / topology / coil winding / slug-magnet),
+- a sortable-by-eye generation history table.
 
-Drop a `simulate_design_detailed` result into the same dashboard to see the winning
-design's velocity/position trace and gate crossings, or a `sensitivity_sweep` result to see
-a knob's main-effect curve — the dashboard auto-detects which of the three JSON shapes it's
-been given.
-
-The dashboard itself isn't a file committed to this repo -- it's generated on demand (ask
-your MCP client to build one against the JSON shapes documented above, or regenerate it from
-this doc if an existing one goes stale). That keeps a client-side visualization out of the
-Python package rather than pinning a specific one as canonical.
+Drop a `simulate_design_detailed` result in instead to see the winning design's position/
+velocity/current/temperature time series and gate crossings, a `sensitivity_sweep` result to
+see a knob's main-effect curve, or a `design_sensitivity.interaction_sweep` result (the raw
+Python module, not an MCP tool here) to see a pairwise heatmap.
