@@ -32,6 +32,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from scipy.optimize import differential_evolution
 
 from . import coil_design, design_sensitivity, optimize_design
+from .fem.femm_backend import FemmNotAvailableError
 from .fem.geometry import FINE_SPAN_FACTOR, CoilWindingGeometry, SlugGeometry, coupling_scale_m
 from .fem.reference_backend import AnalyticReferenceBackend
 from .linear_estimator import LinearStepperEstimator
@@ -179,6 +180,8 @@ class _SearchState:
     generation: int = 0
     best_speed: float = 0.0
     best_knobs: Optional[dict[str, Any]] = None
+    femm_speed: Optional[float] = None
+    femm_note: Optional[str] = None
     history: list = dataclasses.field(default_factory=list)
     done: bool = False
     error: Optional[str] = None
@@ -190,7 +193,8 @@ _INTERIM_WRITE_INTERVAL_S = 2.0   # how often objective() refreshes the file mid
 
 
 def _run_search(state: _SearchState, bounds: Bounds, maxiter: int, popsize: int, seed: int,
-                 dt: float, t_end: float, result_path: Path, force_law: str = "analytic") -> None:
+                 dt: float, t_end: float, result_path: Path, force_law: str = "analytic",
+                 verify_with_femm: bool | None = None) -> None:
     def objective(x: Any) -> float:
         knobs = decode(x)
         if knobs.n_coils * knobs.coil_length_m > bounds.max_tube_length_m:
@@ -279,9 +283,27 @@ def _run_search(state: _SearchState, bounds: Bounds, maxiter: int, popsize: int,
         best_knobs = decode(result.x)
         best_speed = simulate_design(best_knobs, dt=2e-5, t_end=t_end, bootstrap_timeout_s=0.20,
                                       force_law=force_law)
+
+        # Real-FEMM verification of the winner ONLY -- never the search itself (see
+        # optimize_design.optimize's docstring: each FEMM solve is seconds, the search calls
+        # the force law millions of times). None (default) auto-attempts and falls back to
+        # femm_speed=None if FEMM isn't installed; True requires it and re-raises.
+        femm_speed: float | None = None
+        femm_note: str | None = None
+        if verify_with_femm is not False:
+            try:
+                femm_speed = simulate_design(best_knobs, dt=2e-5, t_end=t_end,
+                                              bootstrap_timeout_s=0.20, force_law="femm")
+            except FemmNotAvailableError:
+                if verify_with_femm is True:
+                    raise
+                femm_note = "FEMM not installed -- best_speed_m_s is analytic-only"
+
         with state.lock:
             state.best_speed = best_speed
             state.best_knobs = _knobs_dict(best_knobs)
+            state.femm_speed = femm_speed
+            state.femm_note = femm_note
             state.done = True
             elapsed = time.time() - state.start_time
             final = {
@@ -291,6 +313,7 @@ def _run_search(state: _SearchState, bounds: Bounds, maxiter: int, popsize: int,
                 "fault_fraction_overall": state.faults / state.evals if state.evals else 0.0,
                 "best_speed_m_s": best_speed,
                 "best_speed_search_estimate_m_s": -result.fun,
+                "femm_speed_m_s": femm_speed, "femm_note": femm_note,
                 "best_knobs": state.best_knobs, "elapsed_s": elapsed, "eta_s": 0.0,
                 "history": state.history,
             }
@@ -328,6 +351,7 @@ async def run_optimization(
     bounds_overrides: Optional[dict[str, Any]] = None,
     fault_warning_threshold: float = 0.9,
     force_law: str = "analytic",
+    verify_with_femm: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Run the design-space optimizer (differential evolution over the 11 knobs in
     docs/DESIGN_OPTIMIZER.md) to maximize slug exit speed. Reports live progress through the
@@ -345,10 +369,18 @@ async def run_optimization(
     max_tube_length_m), e.g. {"bus_voltage_v": [3, 60], "i_max_a": [1, 30]} to cap the search
     to hardware you can actually source. Unlisted fields keep optimize_design.Bounds' defaults.
 
-    force_law: "analytic" (default) or "fem_reference" -- see optimize_design.FORCE_LAWS /
-    docs/FEM_PIPELINE.md. "fem_reference" runs meaningfully slower per evaluation (each force
-    query is a closed-form elliptic-integral call, not a trivial exponential) -- budget
-    maxiter/popsize accordingly.
+    force_law: "analytic" (default) or "fem_reference" -- drives the SEARCH itself. Neither
+    is a real FEM solve (see optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md); a live
+    FEMM-in-the-loop search is computationally infeasible (each FEMM solve is seconds, the
+    search calls the force law millions of times). "fem_reference" runs meaningfully slower
+    per evaluation than "analytic" -- budget maxiter/popsize accordingly.
+
+    verify_with_femm: after the search, re-simulate ONLY the winning design under a real
+    FEMM solve (fem.femm_backend.FemmBackend, one sweep shared across every coil) and report
+    it as "femm_speed_m_s" -- distinct from "best_speed_m_s" (always the analytic/fem_reference
+    number), never substituted for it. None (default): auto-verify if FEMM is installed,
+    leave femm_speed_m_s null with a "femm_note" otherwise. True: require FEMM, raise if
+    missing. False: skip verification entirely.
     """
     bounds = _bounds_from_overrides(bounds_overrides)
     state = _SearchState()
@@ -356,7 +388,8 @@ async def run_optimization(
 
     thread = threading.Thread(
         target=_run_search,
-        args=(state, bounds, maxiter, popsize, seed, dt, t_end, LATEST_PATH, force_law),
+        args=(state, bounds, maxiter, popsize, seed, dt, t_end, LATEST_PATH, force_law,
+              verify_with_femm),
         daemon=True,
     )
     thread.start()
@@ -396,6 +429,7 @@ async def run_optimization(
             "generations": state.generation, "evals_total": state.evals,
             "fault_fraction_overall": state.faults / state.evals if state.evals else 0.0,
             "best_speed_m_s": state.best_speed, "best_knobs": state.best_knobs,
+            "femm_speed_m_s": state.femm_speed, "femm_note": state.femm_note,
             "results_file": str(LATEST_PATH),
         }
     await ctx.report_progress(total_evals_estimate, total_evals_estimate, "done")
@@ -425,8 +459,9 @@ def simulate_design_detailed(
     artifact -- including the "Slug animation" view, which replays this ACTUAL simulated
     trajectory (not a canned/illustrative one) against the design's real coil/gate layout.
     Use this on the winning design from a search to see *how* it reaches its exit speed, not
-    just the final number. force_law: "analytic" (default) or "fem_reference" -- see
-    optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md."""
+    just the final number. force_law: "analytic" (default), "fem_reference" (fast analytic
+    approximation, not real FEM), or "femm" (a real FEMM sweep, needs FEMM installed -- slower
+    but this IS a real FEM solve) -- see optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md."""
     dk = DesignKnobs(**knobs)
     p = build_params(dk, force_law=force_law)
     pitch = dk.coil_length_m
@@ -469,7 +504,8 @@ def sensitivity_sweep(
     baseline defaults to the latest run_optimization result's best_knobs. Returns
     {"knob", "baseline", "points": [{"value", "speed"}, ...]} -- load it in the EMAC
     Optimizer Dashboard artifact to see the main-effect curve. force_law: "analytic"
-    (default) or "fem_reference" -- see optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md."""
+    (default), "fem_reference", or "femm" (real FEM, needs FEMM installed, much slower per
+    point) -- see optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md."""
     bounds = _bounds_from_overrides(bounds_overrides)
     base = DesignKnobs(**baseline) if baseline else _load_latest_knobs()
     points = design_sensitivity.sweep_knob(knob, base, bounds, n_points=n_points, dt=dt, t_end=t_end,

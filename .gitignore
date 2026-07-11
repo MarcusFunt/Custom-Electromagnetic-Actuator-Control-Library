@@ -12,3 +12,4 @@ dist/
 tools/python/out/
 .claude/
 CLAUDE.md
+_emac_femgen_tmp.*

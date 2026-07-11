@@ -307,8 +307,20 @@ re-verified at high fidelity regardless).
 from emac_sim.optimize_design import optimize, Bounds
 
 bounds = Bounds(bus_voltage_v=(3.0, 60.0), i_max_a=(1.0, 30.0))   # e.g. cap to what you can actually source
-knobs, speed, result = optimize(bounds=bounds, maxiter=25, popsize=15)
+knobs, speed, result, femm_speed = optimize(bounds=bounds, maxiter=25, popsize=15)
 ```
+
+## 5b. Verifying against real FEM (`docs/FEM_PIPELINE.md`)
+
+The search above always runs on a fast analytic force law (`force_law="analytic"` or
+`"fem_reference"` -- neither is a real FEM solve; see `docs/FEM_PIPELINE.md`). Real FEM
+(`fem.femm_backend.FemmBackend`, driving the actual [FEMM](http://www.femm.info/)
+application) is too slow to drive the search itself, but `optimize()` and `emac-optimize`
+automatically re-simulate the *winning* design under it afterward (`verify_with_femm`,
+default `"auto"`: verifies if FEMM is installed, otherwise reports a plain "not installed"
+note instead of silently passing off the analytic number as FEM-verified). See
+`docs/FEM_PIPELINE.md`'s "Verifying the winning design against real FEMM" section for the
+full mechanism, CLI flags, and MCP JSON fields.
 
 ## 6. Sensitivity and interaction analysis (`design_sensitivity.py`)
 

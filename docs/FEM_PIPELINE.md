@@ -103,11 +103,65 @@ That's fixed: `optimize_design.build_params`/`simulate_design`/`optimize`, and e
   file needed for this: the reference backend is a closed-form evaluation (~0.1 ms), cheap
   enough to call during a search rather than needing a pre-swept table. Winding electrical/
   thermal properties (resistance, inductance, thermal mass) are identical between the two --
-  only the force law differs, so results are directly comparable.
+  only the force law differs, so results are directly comparable. **Neither `"analytic"` nor
+  `"fem_reference"` is a real FEM solve** -- both are closed-form approximations (no iron, no
+  saturation, vacuum permeability everywhere); see the reference backend's own module
+  docstring. Don't mistake the name `"fem_reference"` for "this ran through FEMM."
+- `"femm"` -- each coil's force law comes from an actual FEMM axisymmetric magnetostatic
+  solve (`fem.femm_backend.FemmBackend`). One sweep per design is shared across every coil
+  (`optimize_design._femm_force_lut`/`_femm_geometry_key`): `FEMBackend.solve()` never reads
+  a coil's `position_m`, and every coil in one design has identical winding/magnet geometry,
+  so the coils differ only in *where* the shared table gets evaluated (`net_force`'s
+  `offset = x - coil.position_m`). Results are memoized per unique geometry, so repeated
+  calls with the same knobs don't re-sweep (the cache key includes `i_max_a`, since it sets
+  the swept current span -- see below). Uses a coarser grid (15 offsets x 5 currents,
+  `optimize_design._FEMM_VERIFY_N_OFFSETS`/`_FEMM_VERIFY_N_CURRENTS`) than `emac-femgen`'s
+  31x11 LUT-file default, trading interpolation precision for wall-clock time, but the
+  current axis is always swept out to the design's own `i_max_a` (not the 6&nbsp;A generic
+  default) -- `ForceLUT` clamps out-of-range queries rather than extrapolating, so a table
+  that stopped short of a design's actual operating current would silently understate its
+  force at every point past that edge. Requires FEMM
+  installed; raises `FemmNotAvailableError` otherwise. **Cannot drive `optimize()`'s search
+  itself** -- `differential_evolution` calls the force law potentially millions of times
+  across a run, and each FEMM solve takes seconds; `optimize(force_law="femm")` raises
+  `ValueError` pointing at `verify_with_femm` instead (see below). `simulate_design`/
+  `build_params`/`simulate_design_detailed`/`sensitivity_sweep` accept it directly for
+  single-design calls, where the cost is one sweep, not millions.
 
 ```powershell
 emac-optimize --force-law fem_reference --maxiter 15 --popsize 12
 ```
+
+### Verifying the winning design against real FEMM
+
+Because the search itself can't use `"femm"`, `optimize()` (and the `emac-optimize` CLI, and
+the `run_optimization` MCP tool) instead take a separate `verify_with_femm` option that
+re-simulates ONLY the winning design under `force_law="femm"` after the search finishes,
+reporting it as a distinct `femm_speed` -- never substituted for the search's analytic
+number, so a result can't silently look FEMM-verified when it isn't:
+
+- `None` (default) -- auto: verify if FEMM is importable, otherwise leave `femm_speed=None`
+  with a printed/JSON note (`"FEMM not installed -- ... is analytic-only"`) rather than
+  failing or staying silent about which number you're looking at.
+- `True` -- require FEMM; raises `FemmNotAvailableError` if it's missing.
+- `False` -- skip verification entirely.
+
+```powershell
+emac-optimize --maxiter 15 --popsize 12                 # verify-femm defaults to "auto"
+emac-optimize --maxiter 15 --popsize 12 --verify-femm no # analytic-only, no FEMM attempt
+```
+
+The CLI prints both numbers when verification succeeds:
+
+```
+search reported 4.21 m/s at low fidelity; re-verified (analytic) at high fidelity: 4.18 m/s
+FEMM-verified exit speed: 4.05 m/s
+```
+
+The MCP `run_optimization` tool's JSON result and `build/optimize_results/latest.json`
+snapshot carry the same two numbers as `best_speed_m_s` (analytic/fem_reference) and
+`femm_speed_m_s` (real FEMM, `null` if not verified) plus a `femm_note` explaining why when
+`femm_speed_m_s` is `null`.
 
 **This is not a rounding-error difference.** Evaluating the SAME design (5 coils, 150
 turns, 10 A cap) with the velocity governor disabled (the optimizer's actual objective --

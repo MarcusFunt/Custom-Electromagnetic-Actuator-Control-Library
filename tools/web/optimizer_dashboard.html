@@ -484,7 +484,7 @@ function renderOptimizer(obj) {
         <span style="font-family:var(--mono);font-size:0.82rem;color:var(--text-muted)">
           seed ${obj.seed ?? "—"} · popsize ${obj.popsize ?? "—"} · maxiter ${obj.maxiter ?? "—"}
         </span>
-        <span class="hero-best">${fmtNum(obj.best_speed_m_s, 2)} <span>m/s best${isDone ? " (re-verified)" : " so far"}</span></span>
+        <span class="hero-best">${fmtNum(obj.best_speed_m_s, 2)} <span>m/s best${isDone ? " (re-verified, analytic)" : " so far"}</span></span>
       </div>
       <div class="progress-track"><div class="progress-fill ${isDone ? "done" : isError ? "error" : ""}" style="width:${pct.toFixed(1)}%"></div></div>
       <div class="progress-labels">
@@ -496,7 +496,9 @@ function renderOptimizer(obj) {
         <div class="stat"><div class="k">elapsed</div><div class="v">${fmtTime(obj.elapsed_s)}</div></div>
         <div class="stat"><div class="k">fault rate</div><div class="v ${faultClass}">${(faultOverall * 100).toFixed(0)}%</div></div>
         ${isDone && obj.best_speed_search_estimate_m_s !== undefined ? `<div class="stat"><div class="k">search estimate</div><div class="v">${fmtNum(obj.best_speed_search_estimate_m_s, 2)}</div></div>` : ""}
+        ${isDone && obj.femm_speed_m_s != null ? `<div class="stat"><div class="k">FEMM-verified</div><div class="v" style="color:var(--accent)">${fmtNum(obj.femm_speed_m_s, 2)}</div></div>` : ""}
       </div>
+      ${isDone && obj.femm_speed_m_s == null && obj.femm_note ? `<div class="note" style="margin-top:0.6rem">ℹ ${escapeHtml(obj.femm_note)}</div>` : ""}
     </div>
 
     ${faultOverall >= 0.9 ? `<div class="error-box" style="margin-bottom:1.6rem">⚠ ${(faultOverall*100).toFixed(0)}% of candidates FAULTed or scored 0&nbsp;m/s -- bounds may be infeasible (tube length, current/voltage too low to bootstrap, etc.)</div>` : ""}

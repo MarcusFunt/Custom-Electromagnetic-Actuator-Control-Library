@@ -1,5 +1,6 @@
 import pytest
 
+from emac_sim.fem.femm_backend import FemmNotAvailableError
 from emac_sim.optimize_design import (
     PUMP_ENVELOPES,
     Bounds,
@@ -89,10 +90,99 @@ def test_simulate_design_runs_under_fem_reference_force_law():
 
 
 def test_optimize_runs_and_returns_a_feasible_design():
-    knobs, speed, result = optimize(bounds=TIGHT_BOUNDS, maxiter=1, popsize=3,
-                                     dt=5e-4, t_end=1.0, seed=0)
+    knobs, speed, result, femm_speed = optimize(bounds=TIGHT_BOUNDS, maxiter=1, popsize=3,
+                                                  dt=5e-4, t_end=1.0, seed=0,
+                                                  verify_with_femm=False)
     assert speed >= 0.0
+    assert femm_speed is None
     assert TIGHT_BOUNDS.n_coils[0] <= knobs.n_coils <= TIGHT_BOUNDS.n_coils[1]
     assert TIGHT_BOUNDS.turns[0] <= knobs.turns <= TIGHT_BOUNDS.turns[1]
     assert knobs.n_coils * knobs.coil_length_m <= TIGHT_BOUNDS.max_tube_length_m + 1e-9
     assert knobs.pump_envelope in PUMP_ENVELOPES
+
+
+def test_optimize_rejects_femm_as_the_search_force_law():
+    """force_law='femm' cannot drive the search itself -- each FEMM solve takes seconds and
+    the search calls the force law millions of times. This must fail fast, before ever
+    touching FEMM, so it runs unconditionally regardless of whether FEMM is installed."""
+    with pytest.raises(ValueError):
+        optimize(bounds=TIGHT_BOUNDS, maxiter=1, popsize=3, dt=5e-4, t_end=1.0, seed=0,
+                 force_law="femm")
+
+
+def test_optimize_auto_verify_skips_cleanly_without_femm(monkeypatch):
+    """verify_with_femm=None (the default, 'auto') must not raise when FEMM isn't
+    installed -- it should report femm_speed=None instead. Forces the not-installed path by
+    construction (monkeypatching the FEMM entry point) so this test's outcome doesn't depend
+    on whether FEMM happens to be installed on the machine running it."""
+    import emac_sim.optimize_design as optimize_design_module
+
+    def _raise(*_args, **_kwargs):
+        raise FemmNotAvailableError("femm.info -- not installed (test stub)")
+
+    monkeypatch.setattr(optimize_design_module, "_femm_force_lut", _raise)
+    knobs, speed, result, femm_speed = optimize(bounds=TIGHT_BOUNDS, maxiter=1, popsize=3,
+                                                  dt=5e-4, t_end=1.0, seed=0,
+                                                  verify_with_femm=None)
+    assert femm_speed is None
+
+
+def test_build_params_femm_shares_one_force_lut_across_coils(monkeypatch):
+    """Every coil in one design shares identical winding/magnet geometry (only position_m
+    differs), and FEMBackend.solve() never reads coil.position_m -- so build_params should
+    sweep FEMM exactly ONCE per design and hand every CoilStation the SAME ForceLUT
+    instance, not one sweep per coil. Verified with a stub `_femm_force_lut` (no FEMM
+    needed) so this test always runs and directly counts sweeps instead of just checking
+    `is not None`."""
+    import numpy as np
+
+    import emac_sim.optimize_design as optimize_design_module
+    from emac_sim.fem.lut import ForceLUT
+
+    knobs = decode([48.0, 0, 0, 3, 60, 0.02, 0.008, 0.005, 0.015, 1.2, 15.0])
+    stub_lut = ForceLUT(
+        offsets_m=np.array([-1.0, 0.0, 1.0]), currents_a=np.array([-1.0, 0.0, 1.0]),
+        force_n=np.zeros((3, 3)),
+        metadata={"turns": knobs.turns, "coil_length_m": knobs.coil_length_m,
+                  "radial_thickness_m": knobs.radial_thickness_m,
+                  "bore_clearance_m": 0.0015, "magnet_radius_m": knobs.magnet_radius_m,
+                  "magnet_length_m": knobs.magnet_length_m, "remanence_t": knobs.remanence_t},
+    )
+    calls = []
+
+    def _stub(k):
+        calls.append(k)
+        return stub_lut
+
+    monkeypatch.setattr(optimize_design_module, "_femm_force_lut", _stub)
+    p = build_params(knobs, force_law="femm")
+
+    assert len(calls) == 1
+    assert len(p.coils) == 3
+    assert p.coils[0].force_lut is p.coils[1].force_lut is p.coils[2].force_lut is stub_lut
+
+
+def test_build_params_femm_matches_electrical_properties_of_analytic():
+    """force_law only changes the FORCE law -- resistance/inductance/thermal mass (all
+    geometry-derived, not force-law-derived) must match the analytic branch, same invariant
+    as the existing fem_reference test above."""
+    pytest.importorskip("femm")
+    knobs = decode([48.0, 0, 0, 2, 60, 0.02, 0.008, 0.005, 0.015, 1.2, 15.0])
+    analytic = build_params(knobs, force_law="analytic")
+    femm = build_params(knobs, force_law="femm")
+
+    assert len(femm.coils) == 2
+    for a_coil, f_coil in zip(analytic.coils, femm.coils):
+        assert a_coil.position_m == pytest.approx(f_coil.position_m)
+        assert a_coil.resistance_ohm == pytest.approx(f_coil.resistance_ohm)
+        assert a_coil.inductance_h == pytest.approx(f_coil.inductance_h)
+
+
+def test_optimize_verify_with_femm_reports_a_speed_when_available():
+    pytest.importorskip("femm")
+    knobs, speed, result, femm_speed = optimize(
+        bounds=TIGHT_BOUNDS, maxiter=1, popsize=3, dt=5e-4, t_end=1.0, seed=0,
+        verify_with_femm=True,
+    )
+    assert femm_speed is not None
+    assert femm_speed >= 0.0

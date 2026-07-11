@@ -94,7 +94,18 @@ class FemmBackend:
                              0, 1, 0, 0, 0, 0)
 
         outer_r = _AIR_MARGIN_FACTOR * coil.outer_radius_m(slug)
-        half_extent = _AIR_MARGIN_FACTOR * max(coil.coil_length_m, slug.magnet_length_m)
+        # Must contain the slug's drawn rectangle (centered at z=-offset_m, half-extent
+        # 0.5*magnet_length_m) for EVERY offset_m a caller passes in -- not just offset_m=0.
+        # Without the abs(offset_m) term, a sweep's far offsets (see geometry.py's
+        # FAR_SPAN_FACTOR, deliberately wide so ForceLUT's edge-clamping is physically
+        # valid) draw the slug rectangle partially outside this boundary, leaving part of
+        # the domain with no block label -- FEMM then fails mi_analyze with "Material
+        # properties have not been defined for all regions" instead of a geometry error,
+        # so this was easy to miss without actually running a real FEMM solve at those
+        # offsets (see tests/test_fem_femm_backend.py).
+        half_extent = _AIR_MARGIN_FACTOR * max(
+            coil.coil_length_m, slug.magnet_length_m, abs(offset_m) + slug.magnet_length_m,
+        )
 
         femm.mi_drawline(0, -half_extent, outer_r, -half_extent)
         femm.mi_drawline(outer_r, -half_extent, outer_r, half_extent)
@@ -119,7 +130,14 @@ class FemmBackend:
         femm.mi_drawline(0, slug_z1, 0, slug_z0)
         femm.mi_addblocklabel(0.5 * slug.magnet_radius_m, -offset_m)
         femm.mi_selectlabel(0.5 * slug.magnet_radius_m, -offset_m)
-        femm.mi_setblockprop("NdFeB", 1, mesh, "<None>", 90, _SLUG_GROUP, 0)
+        # magdir=-90 (not +90): FEMM's axisymmetric magnetization-angle convention put +90
+        # along -z here, which inverted the ENTIRE force curve relative to the documented
+        # sign contract (backend.py: positive offset_m + positive current_a should attract,
+        # i.e. force_n < 0) -- confirmed by comparing point-for-point against
+        # reference_backend.AnalyticReferenceBackend, which is exactly this backend's
+        # negative at every sampled offset before this fix. See
+        # tests/test_fem_femm_backend.py::test_femm_backend_force_sign_matches_reference_backend.
+        femm.mi_setblockprop("NdFeB", 1, mesh, "<None>", -90, _SLUG_GROUP, 0)
         femm.mi_clearselected()
 
         # Coil: fixed at z=0 (the coordinate origin is the coil's own center).
