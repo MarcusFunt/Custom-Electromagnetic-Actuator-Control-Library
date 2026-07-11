@@ -76,6 +76,16 @@ def test_interaction_sweep_grid_shape_matches_both_axes():
     assert all(len(row) == 2 for row in result["grid"])
 
 
+def test_sweep_knob_accepts_fem_reference_force_law():
+    """The design-space sensitivity tooling can run against fem.reference_backend's real
+    coupling shape instead of the synthetic analytic lobe -- see
+    optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md."""
+    points = sweep_knob("i_max_a", BASELINE, FAST_BOUNDS, n_points=3, dt=1e-3, t_end=0.3,
+                         force_law="fem_reference")
+    assert len(points) == 3
+    assert all(isinstance(p["speed"], float) and p["speed"] >= 0.0 for p in points)
+
+
 def test_interaction_sweep_defaults_second_knob_point_count_to_first():
     result = interaction_sweep("i_max_a", "remanence_t", BASELINE, FAST_BOUNDS, n_points_a=4,
                                 dt=1e-3, t_end=0.3)

@@ -184,6 +184,7 @@ body.drop-active::after {
   transition: width 0.4s ease;
 }
 .progress-fill.done { background: var(--good); }
+.progress-fill.error { background: var(--bad); }
 .progress-labels {
   display: flex; justify-content: space-between;
   font-family: var(--mono); font-size: 0.76rem; color: var(--text-muted);
@@ -213,9 +214,31 @@ section { margin-bottom: 2rem; }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 1.1rem 1.2rem;
 }
-.chart-wrap svg { display: block; width: 100%; height: 220px; }
-.chart-legend { display: flex; gap: 1.2rem; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; }
+.chart-wrap > svg { display: block; width: 100%; height: 220px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 1.2rem; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; }
 .chart-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; }
+.chart-legend .lw { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--text-muted); margin-right: 0.35rem; vertical-align: 4px; }
+.chart-legend .lw.dashed { border-top-style: dashed; }
+
+/* ---- slug animation ---- */
+.anim-track-wrap svg { display: block; width: 100%; height: 150px; }
+#slug-marker { transition: cx 0.06s linear; }
+.coil-band { transition: fill-opacity 0.15s ease, stroke-width 0.15s ease; }
+.coil-band.coil-energized { fill: var(--good); fill-opacity: 0.55; stroke: var(--good); stroke-width: 2; }
+.anim-controls { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.9rem; flex-wrap: wrap; }
+.anim-controls input[type="range"] { flex: 1 1 200px; min-width: 160px; accent-color: var(--accent); }
+.anim-controls select {
+  font-family: var(--sans); font-size: 0.82rem; color: var(--text);
+  background: var(--surface-alt); border: 1px solid var(--border); border-radius: 7px;
+  padding: 0.4rem 0.6rem; cursor: pointer;
+}
+.anim-readout {
+  font-family: var(--mono); font-size: 0.78rem; color: var(--text-muted);
+  display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.7rem;
+}
+.anim-readout b { color: var(--text); font-weight: 600; }
+.anim-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; }
+.anim-hint code { font-family: var(--mono); font-size: 0.9em; }
 
 .spec-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem;
@@ -259,7 +282,7 @@ footer p { max-width: 82ch; }
 
 <p class="eyebrow">emac_sim / mcp_server.py</p>
 <h1>EMAC Optimizer Dashboard</h1>
-<p class="subtitle">Live view of a design-space search running through the <code>run_optimization</code> MCP tool, or any saved <code>get_latest_result</code> / <code>simulate_design_detailed</code> / <code>sensitivity_sweep</code> snapshot. Point it at <code>build/optimize_results/latest.json</code> to watch a run in progress.</p>
+<p class="subtitle">Live view of a design-space search running through the <code>run_optimization</code> MCP tool, or any saved <code>get_latest_result</code> / <code>simulate_design_detailed</code> / <code>sensitivity_sweep</code> / <code>fem_coupling_analysis</code> snapshot. Point it at <code>build/optimize_results/latest.json</code> to watch a run in progress, or <code>build/fem_lut/latest_analysis.json</code> for a FEM coupling comparison.</p>
 
 <div class="loader" id="loader">
   <button class="btn primary" id="btn-open">Open results file…</button>
@@ -291,11 +314,14 @@ footer p { max-width: 82ch; }
 </div>
 
 <footer>
-  <p>Auto-detects three JSON shapes: an optimizer status/result snapshot (has a "status"
-  field), a <code>simulate_design_detailed</code> time series (has "t"/"x"/"v" arrays), and
-  a <code>sensitivity_sweep</code> main-effect curve (has "knob"/"points") or a pairwise
-  interaction grid (has "knob_a"/"knob_b"/"grid") from <code>design_sensitivity.py</code>.
-  Nothing here is uploaded anywhere -- everything runs and stays in this page.</p>
+  <p>Auto-detects five JSON shapes: an optimizer status/result snapshot (has a "status"
+  field), a <code>simulate_design_detailed</code> time series (has "t"/"x"/"v" arrays), a
+  <code>sensitivity_sweep</code> main-effect curve (has "knob"/"points") or a pairwise
+  interaction grid (has "knob_a"/"knob_b"/"grid") from <code>design_sensitivity.py</code>,
+  and a <code>fem_coupling_analysis</code> result (has "kind": "fem_coupling") comparing the
+  analytic and FEM-reference coupling shapes for one coil -- see
+  <a href="../../docs/FEM_PIPELINE.md">docs/FEM_PIPELINE.md</a>. Nothing here is uploaded
+  anywhere -- everything runs and stays in this page.</p>
 </footer>
 
 <script>
@@ -323,6 +349,7 @@ function escapeHtml(s) {
 
 function detectShape(obj) {
   if (obj && typeof obj === "object") {
+    if (obj.kind === "fem_coupling") return "fem";
     if ("status" in obj) return "optimizer";
     if (Array.isArray(obj.t) && Array.isArray(obj.x) && Array.isArray(obj.v)) return "timeseries";
     if ("knob" in obj && Array.isArray(obj.points)) return "sweep";
@@ -335,12 +362,14 @@ function renderData(obj) {
   const shape = detectShape(obj);
   const content = document.getElementById("content");
   if (shape === "optimizer") content.innerHTML = renderOptimizer(obj);
-  else if (shape === "timeseries") content.innerHTML = renderTimeseries(obj);
+  else if (shape === "timeseries") { content.innerHTML = renderTimeseries(obj); wireSlugAnimation(obj); }
   else if (shape === "sweep") content.innerHTML = renderSweep(obj);
   else if (shape === "interaction") content.innerHTML = renderInteraction(obj);
+  else if (shape === "fem") content.innerHTML = renderFem(obj);
   else content.innerHTML = `<div class="error-box">Unrecognized JSON shape -- expected an optimizer
-    status snapshot, a simulate_design_detailed result, or a sensitivity_sweep /
-    interaction_sweep result. Got keys: ${escapeHtml(Object.keys(obj || {}).join(", "))}</div>`;
+    status snapshot, a simulate_design_detailed result, a sensitivity_sweep /
+    interaction_sweep result, or a fem_coupling_analysis result. Got keys:
+    ${escapeHtml(Object.keys(obj || {}).join(", "))}</div>`;
 }
 
 /* ---------------- optimizer status view ---------------- */
@@ -420,9 +449,20 @@ function renderOptimizer(obj) {
   }
   const isRunning = obj.status === "running";
   const isDone = obj.status === "done";
-  const pillClass = isRunning ? "running" : isDone ? "done" : "neutral";
-  const pillText = isRunning ? "Running" : isDone ? "Done" : (obj.status || "unknown");
-  const pct = obj.maxiter ? Math.min(100, 100 * (obj.generation || 0) / obj.maxiter) : 0;
+  const isError = obj.status === "error";
+  const pillClass = isRunning ? "running" : isDone ? "done" : isError ? "error" : "neutral";
+  const pillText = isRunning ? "Running" : isDone ? "Done" : isError ? "Error" : (obj.status || "unknown");
+
+  // generation_in_progress/evals_this_gen_so_far (present on the interim writes objective()
+  // does mid-generation, absent on callback()'s generation-boundary writes and the final
+  // snapshot) let the progress bar move smoothly WITHIN a generation instead of only
+  // jumping once per generation -- a single-process search's own generation can take
+  // minutes, and a bar frozen that whole time looks indistinguishable from a hung run.
+  const genWhole = obj.generation ?? 0;
+  const genFraction = (obj.evals_this_gen_expected
+    ? Math.min(1, (obj.evals_this_gen_so_far || 0) / obj.evals_this_gen_expected) : 0);
+  const genProgress = genWhole + (obj.generation_in_progress ? genFraction : 0);
+  const pct = obj.maxiter ? Math.min(100, 100 * genProgress / obj.maxiter) : 0;
   const faultOverall = obj.fault_fraction_overall || 0;
   const faultClass = faultOverall >= 0.9 ? "bad" : faultOverall >= 0.5 ? "warn" : "";
 
@@ -437,6 +477,7 @@ function renderOptimizer(obj) {
     </tr>`).join("");
 
   return `
+    ${isError ? `<div class="error-box" style="margin-bottom:1rem">✕ Search failed: ${escapeHtml(obj.error || "unknown error")}</div>` : ""}
     <div class="hero">
       <div class="hero-top">
         <span class="pill ${pillClass}">${pillText}</span>
@@ -445,10 +486,10 @@ function renderOptimizer(obj) {
         </span>
         <span class="hero-best">${fmtNum(obj.best_speed_m_s, 2)} <span>m/s best${isDone ? " (re-verified)" : " so far"}</span></span>
       </div>
-      <div class="progress-track"><div class="progress-fill ${isDone ? "done" : ""}" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="progress-track"><div class="progress-fill ${isDone ? "done" : isError ? "error" : ""}" style="width:${pct.toFixed(1)}%"></div></div>
       <div class="progress-labels">
-        <span>generation ${obj.generation ?? 0} / ${obj.maxiter ?? "?"}</span>
-        <span>${isRunning ? `ETA ${fmtTime(obj.eta_s)}` : isDone ? "complete" : ""}</span>
+        <span>generation ${genWhole}${obj.generation_in_progress ? ` (+${(genFraction * 100).toFixed(0)}% of gen ${obj.generation_in_progress})` : ""} / ${obj.maxiter ?? "?"}</span>
+        <span>${isRunning ? `ETA ${fmtTime(obj.eta_s)}` : isDone ? "complete" : isError ? "stopped" : ""}</span>
       </div>
       <div class="hero-stats">
         <div class="stat"><div class="k">evaluations</div><div class="v">${obj.evals_total ?? "—"}</div></div>
@@ -474,6 +515,9 @@ function renderOptimizer(obj) {
     <section>
       <div class="section-head"><h2>Current best design</h2><span class="note">${isDone ? "final, re-verified at high fidelity" : "best found so far -- may still improve"}</span></div>
       ${renderKnobSpec(obj.best_knobs)}
+      ${obj.best_knobs ? `<p class="anim-hint">Want to <b>see</b> this design run, not just its number? Call
+        <code>simulate_design_detailed(knobs=best_knobs${obj.force_law && obj.force_law !== "analytic" ? `, force_law="${obj.force_law}"` : ""})</code>
+        and load its result here for the full time series plus an animation of the slug's actual simulated motion through these coils.</p>` : ""}
     </section>
 
     ${history.length ? `<section>
@@ -507,6 +551,148 @@ function seriesChart(t, series, colors, labels, height) {
     <div class="chart-legend">${labels.map((l, i) => `<span><span class="sw" style="background:${colors[i]}"></span>${l}</span>`).join("")}</div>`;
 }
 
+/* ---------------- slug animation (replays simulate_design_detailed's ACTUAL trajectory) ---------------- */
+
+function trackScale(obj) {
+  const w = 900, pad = 50;
+  const coilPositions = obj.coil_positions_m || [];
+  const gatePositions = obj.gate_positions_m || [];
+  const xs = obj.x || [];
+  const coilHalf = (obj.coil_length_m || 0) / 2;
+  const pts = [
+    ...coilPositions.map(p => p - coilHalf), ...coilPositions.map(p => p + coilHalf),
+    ...gatePositions, ...xs,
+  ];
+  const xMin = pts.length ? Math.min(...pts) : 0, xMax = pts.length ? Math.max(...pts) : 1;
+  const span = (xMax - xMin) || 1;
+  const lo = xMin - span * 0.06, hi = xMax + span * 0.06;
+  const sx = v => pad + (v - lo) / (hi - lo) * (w - 2 * pad);
+  return { w, pad, sx };
+}
+
+function slugTrackSvg(obj) {
+  const { w, sx } = trackScale(obj);
+  const h = 150, trackY = 88;
+  const coilPositions = obj.coil_positions_m || [];
+  const gatePositions = obj.gate_positions_m || [];
+  const coilHalf = (obj.coil_length_m || 0) / 2;
+  const x0 = (obj.x && obj.x.length) ? obj.x[0] : 0;
+
+  let svg = `<line x1="${sx(coilPositions[0] ?? x0) - 30}" y1="${trackY}" x2="${sx(coilPositions[coilPositions.length - 1] ?? x0) + 30}" y2="${trackY}" stroke="var(--border)" stroke-width="10" stroke-linecap="round" />`;
+
+  coilPositions.forEach((p, k) => {
+    const cx0 = sx(p - coilHalf), cx1 = sx(p + coilHalf);
+    svg += `<rect data-coil-index="${k}" class="coil-band" x="${Math.min(cx0, cx1).toFixed(1)}" y="${trackY - 22}" width="${Math.abs(cx1 - cx0).toFixed(1)}" height="44" rx="4" fill="var(--accent)" fill-opacity="0.18" stroke="var(--accent)" stroke-width="1.2" />`;
+    svg += `<text x="${sx(p).toFixed(1)}" y="${trackY - 28}" font-family="ui-monospace,monospace" font-size="9" fill="var(--text-muted)" text-anchor="middle">c${k}</text>`;
+  });
+  gatePositions.forEach((p, k) => {
+    const gx = sx(p).toFixed(1);
+    svg += `<line x1="${gx}" y1="${trackY - 34}" x2="${gx}" y2="${trackY + 34}" stroke="var(--warn)" stroke-width="1" stroke-dasharray="3,2" opacity="0.75" />`;
+    svg += `<text x="${gx}" y="${trackY + 48}" font-family="ui-monospace,monospace" font-size="9" fill="var(--warn)" text-anchor="middle">g${k}</text>`;
+  });
+
+  svg += `<circle id="slug-marker" cx="${sx(x0).toFixed(1)}" cy="${trackY}" r="10" fill="var(--bad)" stroke="var(--bg)" stroke-width="2" />`;
+
+  return `<svg id="anim-track" viewBox="0 0 ${w} ${h}">${svg}</svg>`;
+}
+
+function renderSlugAnimationSection(obj) {
+  const t = obj.t || [];
+  if (!t.length) return "";
+  return `
+    <section>
+      <div class="section-head"><h2>Slug animation</h2><span class="note">actual simulated trajectory -- coils energize exactly as the real supervisor drove them, not illustrative</span></div>
+      <div class="card anim-track-wrap">
+        ${slugTrackSvg(obj)}
+        <div class="anim-controls">
+          <button class="btn primary" id="anim-play">▶ Play</button>
+          <input type="range" id="anim-scrub" min="0" max="1000" value="0" step="1" />
+          <select id="anim-speed">
+            <option value="0.1">0.1×</option>
+            <option value="0.25">0.25×</option>
+            <option value="1" selected>1×</option>
+            <option value="4">4×</option>
+            <option value="20">20×</option>
+          </select>
+        </div>
+        <div class="anim-readout" id="anim-readout"></div>
+        <div class="chart-legend" style="margin-top:0.5rem">
+          <span><span class="sw" style="background:var(--accent)"></span>coil</span>
+          <span><span class="sw" style="background:var(--good)"></span>coil energized</span>
+          <span><span class="sw" style="background:var(--warn)"></span>gate</span>
+          <span><span class="sw" style="background:var(--bad)"></span>slug</span>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function wireSlugAnimation(obj) {
+  const track = document.getElementById("anim-track");
+  const t = obj.t || [];
+  if (!track || !t.length) return;
+
+  const x = obj.x || [], v = obj.v || [], current = obj.active_current || [], activeCoil = obj.active_coil || [];
+  const slug = document.getElementById("slug-marker");
+  const coilEls = [...track.querySelectorAll("[data-coil-index]")];
+  const { sx } = trackScale(obj);
+  const scrub = document.getElementById("anim-scrub");
+  const playBtn = document.getElementById("anim-play");
+  const speedSel = document.getElementById("anim-speed");
+  const readout = document.getElementById("anim-readout");
+
+  const tMin = t[0], tMax = t[t.length - 1];
+
+  function sampleIndexAt(time) {
+    let lo = 0, hi = t.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (t[mid] <= time) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+  }
+
+  function renderFrame(time) {
+    const idx = sampleIndexAt(time);
+    const xPos = x[idx] ?? 0, vVal = v[idx] ?? 0, iVal = current[idx] ?? 0, coilNow = activeCoil[idx];
+    slug.setAttribute("cx", sx(xPos).toFixed(1));
+    coilEls.forEach(el => {
+      const energized = Number(el.dataset.coilIndex) === coilNow && Math.abs(iVal) > 1e-3;
+      el.classList.toggle("coil-energized", energized);
+    });
+    readout.innerHTML = `<span>t=<b>${time.toFixed(4)}</b>s</span><span>x=<b>${xPos.toFixed(4)}</b>m</span><span>v=<b>${vVal.toFixed(3)}</b>m/s</span><span>i=<b>${iVal.toFixed(2)}</b>A</span>`;
+    scrub.value = String(Math.round(1000 * (tMax === tMin ? 0 : (time - tMin) / (tMax - tMin))));
+  }
+
+  let playing = false, rafId = null, lastWall = null, animTime = tMin;
+
+  function step(now) {
+    if (!playing) return;
+    if (lastWall !== null) {
+      animTime += ((now - lastWall) / 1000) * Number(speedSel.value);
+      if (animTime > tMax) animTime = tMin;
+    }
+    lastWall = now;
+    renderFrame(animTime);
+    rafId = requestAnimationFrame(step);
+  }
+
+  playBtn.addEventListener("click", () => {
+    playing = !playing;
+    playBtn.textContent = playing ? "⏸ Pause" : "▶ Play";
+    if (playing) { lastWall = null; rafId = requestAnimationFrame(step); }
+    else if (rafId) cancelAnimationFrame(rafId);
+  });
+  scrub.addEventListener("input", () => {
+    playing = false; playBtn.textContent = "▶ Play";
+    if (rafId) cancelAnimationFrame(rafId);
+    animTime = tMin + (Number(scrub.value) / 1000) * (tMax - tMin);
+    renderFrame(animTime);
+  });
+
+  renderFrame(tMin);
+}
+
 function renderTimeseries(obj) {
   const t = obj.t || [];
   const gateMarks = (obj.gate_t || []).map((gt, i) => `<span class="stat"><div class="k">gate ${obj.gate_index ? obj.gate_index[i] : i}</div><div class="v">${fmtNum(obj.gate_v[i], 2)} m/s @ ${fmtNum(gt, 4)}s</div></span>`).join("");
@@ -518,6 +704,7 @@ function renderTimeseries(obj) {
       </div>
       ${gateMarks ? `<div class="hero-stats">${gateMarks}</div>` : ""}
     </div>
+    ${renderSlugAnimationSection(obj)}
     <section>
       <div class="section-head"><h2>Position &amp; velocity</h2><span class="note">${t.length} samples</span></div>
       <div class="card chart-wrap">${seriesChart(t, [obj.x || [], obj.v || []], ["var(--accent)", "var(--warn)"], ["position (m)", "velocity (m/s)"])}</div>
@@ -611,6 +798,145 @@ function renderInteraction(obj) {
       <div class="card heatmap-wrap">
         <table class="heatmap"><thead><tr><th class="corner"></th>${header}</tr></thead><tbody>${rows}</tbody></table>
       </div>
+    </section>
+  `;
+}
+
+/* ---------------- FEM coupling analysis (fem_coupling_analysis) view ---------------- */
+
+const FEM_CURRENT_PALETTE = ["var(--accent)", "var(--good)", "var(--warn)", "var(--bad)"];
+function currentColor(i) { return FEM_CURRENT_PALETTE[i % FEM_CURRENT_PALETTE.length]; }
+
+function femForceChart(obj) {
+  const w = 900, h = 260, pad = 44;
+  const offsetsMm = obj.offsets_m.map(o => o * 1000);
+  const allY = obj.force_analytic_n.flat().concat(obj.force_fem_reference_n.flat());
+  const yAbsMax = Math.max(...allY.map(Math.abs), 1e-9) * 1.12;
+  const xMin = Math.min(...offsetsMm), xMax = Math.max(...offsetsMm);
+  const sx = x => pad + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (w - 2 * pad);
+  const midY = h / 2;
+  const sy = y => midY - (y / yAbsMax) * (midY - pad * 0.5);
+
+  let svg = `<line x1="${pad}" y1="${midY.toFixed(1)}" x2="${w - pad}" y2="${midY.toFixed(1)}" stroke="var(--border)" />`;
+  svg += `<line x1="${sx(0).toFixed(1)}" y1="${(pad * 0.3).toFixed(1)}" x2="${sx(0).toFixed(1)}" y2="${(h - pad * 0.3).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2,3" />`;
+
+  const legendEntries = [];
+  obj.currents_a.forEach((i_a, idx) => {
+    const color = currentColor(idx);
+    const analyticRow = obj.force_analytic_n[idx];
+    const femRow = obj.force_fem_reference_n[idx];
+    const analyticPath = offsetsMm.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(analyticRow[i]).toFixed(1)}`).join(" ");
+    const femPath = offsetsMm.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(femRow[i]).toFixed(1)}`).join(" ");
+    svg += `<path d="${analyticPath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-dasharray="5,4" opacity="0.8" />`;
+    svg += `<path d="${femPath}" fill="none" stroke="${color}" stroke-width="2.2" />`;
+    legendEntries.push(`<span><span class="sw" style="background:${color}"></span>${fmtNum(i_a, 1)} A</span>`);
+  });
+
+  const chartSvg = `<svg viewBox="0 0 ${w} ${h}">
+    ${svg}
+    <text x="${pad}" y="16" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">force (N)</text>
+    <text x="${w - pad}" y="${h - 10}" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)" text-anchor="end">offset (mm)</text>
+  </svg>`;
+  return { chartSvg, legendEntries };
+}
+
+function femGeometrySchematic(geo) {
+  const w = 900, h = 260;
+  const padX = 90, padY = 46;
+  const maxZ = Math.max(geo.coil_length_m, geo.magnet_length_m) / 2 * 1.25;
+  const maxR = geo.outer_radius_m * 1.25;
+  const scale = Math.min((w - 2 * padX) / 2 / maxZ, (h / 2 - padY) / maxR);
+  const cx = w / 2, cy = h / 2;
+  const z = meters => cx + meters * scale;
+  const rUp = meters => cy - meters * scale;
+  const rDown = meters => cy + meters * scale;
+
+  const coilZ0 = z(-geo.coil_length_m / 2), coilZ1 = z(geo.coil_length_m / 2);
+  const coilInner = rUp(geo.bore_radius_m), coilOuter = rUp(geo.outer_radius_m);
+  const coilInnerNeg = rDown(geo.bore_radius_m), coilOuterNeg = rDown(geo.outer_radius_m);
+  const magZ0 = z(-geo.magnet_length_m / 2), magZ1 = z(geo.magnet_length_m / 2);
+  const magEdge = rUp(geo.magnet_radius_m), magEdgeNeg = rDown(geo.magnet_radius_m);
+
+  const rect = (x0, x1, y0, y1, fill, stroke) =>
+    `<rect x="${Math.min(x0, x1).toFixed(1)}" y="${Math.min(y0, y1).toFixed(1)}" ` +
+    `width="${Math.abs(x1 - x0).toFixed(1)}" height="${Math.abs(y1 - y0).toFixed(1)}" ` +
+    `fill="${fill}" fill-opacity="0.28" stroke="${stroke}" stroke-width="1.2" />`;
+
+  const coilTop = rect(coilZ0, coilZ1, coilOuter, coilInner, "var(--accent)", "var(--accent)");
+  const coilBottom = rect(coilZ0, coilZ1, coilInnerNeg, coilOuterNeg, "var(--accent)", "var(--accent)");
+  const magTop = rect(magZ0, magZ1, magEdge, cy, "var(--bad)", "var(--bad)");
+  const magBottom = rect(magZ0, magZ1, cy, magEdgeNeg, "var(--bad)", "var(--bad)");
+  const axis = `<line x1="${(padX * 0.4).toFixed(1)}" y1="${cy.toFixed(1)}" x2="${(w - padX * 0.4).toFixed(1)}" y2="${cy.toFixed(1)}" stroke="var(--text-muted)" stroke-dasharray="6,4" />`;
+  const labelCoil = `<text x="${((coilZ0 + coilZ1) / 2).toFixed(1)}" y="${(coilOuter - 8).toFixed(1)}" font-family="ui-monospace,monospace" font-size="10" fill="var(--accent)" text-anchor="middle">coil, ${geo.turns}t</text>`;
+  const labelMag = `<text x="${((magZ0 + magZ1) / 2).toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-family="ui-monospace,monospace" font-size="10" fill="var(--bad)" text-anchor="middle" dominant-baseline="middle">PM</text>`;
+  const labelGap = `<text x="${(coilZ0 - 6).toFixed(1)}" y="${(cy - 3).toFixed(1)}" font-family="ui-monospace,monospace" font-size="9" fill="var(--text-muted)" text-anchor="end">${(geo.bore_clearance_m * 1000).toFixed(2)}mm gap</text>`;
+
+  return `<svg viewBox="0 0 ${w} ${h}">
+    ${axis}${coilTop}${coilBottom}${magTop}${magBottom}${labelCoil}${labelMag}${labelGap}
+    <text x="${(padX * 0.4).toFixed(1)}" y="16" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">axisymmetric cross-section, full revolve shown (axis of rotation dashed)</text>
+  </svg>`;
+}
+
+function renderFem(obj) {
+  const diffPct = obj.peak_relative_difference !== null && obj.peak_relative_difference !== undefined
+    ? obj.peak_relative_difference * 100 : null;
+  const diffClass = diffPct !== null && Math.abs(diffPct) >= 10 ? "warn" : "";
+  const { chartSvg, legendEntries } = femForceChart(obj);
+  const geo = obj.geometry || {};
+
+  return `
+    <div class="hero">
+      <div class="hero-top">
+        <span class="pill neutral">FEM coupling analysis</span>
+        <span style="font-family:var(--mono);font-size:0.82rem;color:var(--text-muted)">coil ${obj.coil_index} of ${obj.n_coils}</span>
+        <span class="hero-best">${fmtNum(obj.peak_fem_reference_n, 2)} <span>N peak (FEM reference)</span></span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><div class="k">peak, analytic</div><div class="v">${fmtNum(obj.peak_analytic_n, 2)} N</div></div>
+        <div class="stat"><div class="k">peak, FEM reference</div><div class="v">${fmtNum(obj.peak_fem_reference_n, 2)} N</div></div>
+        <div class="stat"><div class="k">divergence</div><div class="v ${diffClass}">${diffPct === null ? "—" : (diffPct >= 0 ? "+" : "") + diffPct.toFixed(1) + "%"}</div></div>
+        <div class="stat"><div class="k">turns</div><div class="v">${geo.turns ?? "—"}</div></div>
+      </div>
+    </div>
+
+    ${diffPct !== null && Math.abs(diffPct) >= 10 ? `<div class="error-box" style="background:var(--warn-soft);color:var(--warn);margin-bottom:1.6rem">⚠ Peak force differs by ${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(1)}% between the analytic and FEM-reference coupling shapes for this geometry -- see docs/FEM_PIPELINE.md's "Using it in the design optimizer and sensitivity sweeps" for how this can change which design a search reports as best.</div>` : ""}
+
+    <section>
+      <div class="section-head"><h2>Force vs. slug offset</h2><span class="note">analytic (Gaussian lobe, dashed) vs FEM reference (real coupling shape, solid), by current level</span></div>
+      <div class="card chart-wrap">
+        ${chartSvg}
+        <div class="chart-legend">${legendEntries.join("")}</div>
+        <div class="chart-legend" style="margin-top:0.35rem">
+          <span><span class="lw"></span>FEM reference</span>
+          <span><span class="lw dashed"></span>analytic</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Coil / slug cross-section</h2><span class="note">axisymmetric geometry these curves were computed from</span></div>
+      <div class="card chart-wrap">${femGeometrySchematic(geo)}</div>
+      <div class="spec-grid" style="margin-top:0.9rem">
+        <div class="spec-group">
+          <div class="g-title">coil winding</div>
+          <div class="spec-row"><span class="k">turns</span><span class="v">${geo.turns ?? "—"}</span></div>
+          <div class="spec-row"><span class="k">coil_length_m</span><span class="v">${fmtNum(geo.coil_length_m, 5)}</span></div>
+          <div class="spec-row"><span class="k">radial_thickness_m</span><span class="v">${fmtNum(geo.radial_thickness_m, 5)}</span></div>
+          <div class="spec-row"><span class="k">bore_radius_m</span><span class="v">${fmtNum(geo.bore_radius_m, 5)}</span></div>
+          <div class="spec-row"><span class="k">mean_radius_m</span><span class="v">${fmtNum(geo.mean_radius_m, 5)}</span></div>
+        </div>
+        <div class="spec-group">
+          <div class="g-title">slug / magnet</div>
+          <div class="spec-row"><span class="k">magnet_radius_m</span><span class="v">${fmtNum(geo.magnet_radius_m, 5)}</span></div>
+          <div class="spec-row"><span class="k">magnet_length_m</span><span class="v">${fmtNum(geo.magnet_length_m, 5)}</span></div>
+          <div class="spec-row"><span class="k">remanence_t</span><span class="v">${fmtNum(geo.remanence_t, 3)} T</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Design</h2></div>
+      ${renderKnobSpec(obj.knobs)}
     </section>
   `;
 }

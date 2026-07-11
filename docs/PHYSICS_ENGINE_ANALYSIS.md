@@ -48,9 +48,15 @@ base class would hide important design decisions.
    simulator already had both endpoint positions and velocities, but event timestamps were
    estimated from endpoint positions only.  That throws away information, especially around
    narrow gates, high accelerations, or coarse smoke-test timesteps.
-3. **The magnetic lobe is still synthetic.** `q_shape()` is an analytic placeholder.  It is
-   useful for controller development but should eventually be replaced by a fitted lookup
-   table from FEM or calibration data.
+3. **The magnetic lobe is still synthetic by default.** `q_shape()` is an analytic
+   placeholder, useful for controller development but not a real coupling profile. A fitted
+   lookup table now exists as an opt-in alternative: `docs/FEM_PIPELINE.md`'s
+   `emac-femgen` pipeline sweeps a real axisymmetric field solve (FEMM) or a shape-accurate
+   analytic-reference backend into a `ForceLUT`, which `linear_plant.net_force` uses
+   directly for any coil with `force_lut_path` set -- `q_shape` remains the default for
+   every config that doesn't opt in. Calibration-data-fitted tables (vs. simulated) are
+   still not supported. The reluctance (soft-iron) branch is also not yet covered by this
+   pipeline -- see `docs/FEM_PIPELINE.md`'s known limitations.
 4. **Bus droop is still absent; winding self-heating is now modeled.** `plant.
    resistance_at_temperature` / `plant.thermal_step` track each linear-stepper coil's
    temperature from its own i^2*R dissipation (one-node thermal model, opt-in via

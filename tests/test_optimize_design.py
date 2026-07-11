@@ -47,6 +47,47 @@ def test_simulate_design_returns_zero_for_an_infeasible_tube_length():
     assert v >= 0.0    # doesn't raise; a reasonable design should move at all
 
 
+def test_build_params_fem_reference_matches_electrical_properties_of_analytic():
+    """force_law only changes the FORCE law -- mass, resistance, inductance, thermal mass
+    (all geometry-derived, not force-law-derived) must be identical between the two."""
+    knobs = decode([48.0, 0, 0, 3, 60, 0.02, 0.008, 0.005, 0.015, 1.2, 15.0])
+    analytic = build_params(knobs, force_law="analytic")
+    fem = build_params(knobs, force_law="fem_reference")
+
+    assert analytic.mass_kg == pytest.approx(fem.mass_kg)
+    assert len(analytic.coils) == len(fem.coils) == 3
+    for a_coil, f_coil in zip(analytic.coils, fem.coils):
+        assert a_coil.position_m == pytest.approx(f_coil.position_m)
+        assert a_coil.resistance_ohm == pytest.approx(f_coil.resistance_ohm)
+        assert a_coil.inductance_h == pytest.approx(f_coil.inductance_h)
+        assert a_coil.thermal_mass_j_per_k == pytest.approx(f_coil.thermal_mass_j_per_k)
+
+
+def test_build_params_fem_reference_uses_a_force_lut_analytic_does_not():
+    knobs = decode([48.0, 0, 0, 3, 60, 0.02, 0.008, 0.005, 0.015, 1.2, 15.0])
+    analytic = build_params(knobs, force_law="analytic")
+    fem = build_params(knobs, force_law="fem_reference")
+
+    assert analytic.coils[0].force_lut is None
+    assert fem.coils[0].force_lut is not None
+    # the force_lut is directly callable -- a live analytic-reference-backend query, not a
+    # pre-baked table -- and produces a nonzero, sane force for a nonzero current
+    force = fem.coils[0].force_lut(0.005, 5.0)
+    assert force != 0.0
+
+
+def test_build_params_rejects_unknown_force_law():
+    knobs = decode([48.0, 0, 0, 3, 60, 0.02, 0.008, 0.005, 0.015, 1.2, 15.0])
+    with pytest.raises(ValueError):
+        build_params(knobs, force_law="not_a_real_force_law")
+
+
+def test_simulate_design_runs_under_fem_reference_force_law():
+    knobs = decode([48.0, 0, 0, 3, 60, 0.02, 0.008, 0.005, 0.015, 1.2, 15.0])
+    v = simulate_design(knobs, dt=1e-3, t_end=0.5, force_law="fem_reference")
+    assert v >= 0.0
+
+
 def test_optimize_runs_and_returns_a_feasible_design():
     knobs, speed, result = optimize(bounds=TIGHT_BOUNDS, maxiter=1, popsize=3,
                                      dt=5e-4, t_end=1.0, seed=0)

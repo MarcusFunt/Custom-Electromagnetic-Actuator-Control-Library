@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Callable, Sequence
 
 from .plant import (
     f_current,
@@ -70,6 +70,18 @@ class CoilStation:
     # constant like every other uncalibrated value here, pending a real measurement.
     thermal_mass_j_per_k: float = 12.0     # J/K
     thermal_resistance_k_per_w: float = 8.0  # K/W
+    # Optional FEM/analytic-sweep force table (fem/lut.py's ForceLUT, or any callable of
+    # (offset_m, current_a) -> force_n) -- see fem/__init__.py and config.LinearCoilConfig.
+    # force_lut_path. When set, net_force() uses it INSTEAD OF q_shape/f_current/
+    # f_current_pm for this coil entirely (it already captures the coil's real coupling
+    # shape and, for the FEMM backend, real nonlinear reluctance -- there is no remaining
+    # role for the synthetic Gaussian lobe once a swept table exists). None (default)
+    # reproduces the exact prior analytic-lobe behavior. compare=False/repr=False: a LUT
+    # can hold large arrays and isn't required to be comparable/loggable like every other
+    # (small, numeric) field here.
+    force_lut: Callable[[float, float], float] | None = field(
+        default=None, compare=False, repr=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -146,13 +158,21 @@ def net_force(x: float, currents: Sequence[float], p: LinearActuatorParams) -> f
     that coil's position -- reluctance term (f_current) plus PM term (f_current_pm),
     added together per coil -- plus the constant pressure bias (if any). Reuses
     q_shape/f_current/f_current_pm verbatim -- only the anchor point (each coil's own
-    position_m) differs from the pendulum's single anchor at theta=0."""
+    position_m) differs from the pendulum's single anchor at theta=0.
+
+    A coil with `coil.force_lut` set (see CoilStation.force_lut) skips q_shape/f_current/
+    f_current_pm entirely and instead calls the LUT directly with the same (offset, current)
+    arguments -- the FEM/analytic-sweep table already IS the coil's full force law."""
     total = p.pressure_bias_n
     for coil, i_k in zip(p.coils, currents):
         if i_k == 0.0:
             continue
-        q = q_shape(x - coil.position_m, coil.x_c)
-        total += q * (f_current(i_k, coil) + f_current_pm(i_k, coil.k_a))
+        offset = x - coil.position_m
+        if coil.force_lut is not None:
+            total += coil.force_lut(offset, i_k)
+        else:
+            q = q_shape(offset, coil.x_c)
+            total += q * (f_current(i_k, coil) + f_current_pm(i_k, coil.k_a))
     return total
 
 
