@@ -48,40 +48,48 @@ def _bound_values(knob: str, bounds: Bounds, n_points: int) -> list[Any]:
     return raw
 
 
-def _safe_speed(knobs: DesignKnobs, bounds: Bounds, dt: float, t_end: float) -> float:
+def _safe_speed(knobs: DesignKnobs, bounds: Bounds, dt: float, t_end: float,
+                 force_law: str = "analytic") -> float:
     if knobs.n_coils * knobs.coil_length_m > bounds.max_tube_length_m:
         return 0.0    # over the tube-length budget -- same treatment as optimize_design.py
     try:
-        return simulate_design(knobs, dt=dt, t_end=t_end)
+        return simulate_design(knobs, dt=dt, t_end=t_end, force_law=force_law)
     except (ValueError, ZeroDivisionError):
         return 0.0
 
 
 def sweep_knob(knob: str, baseline: DesignKnobs, bounds: Bounds = Bounds(),
-               n_points: int = 9, dt: float = 2e-4, t_end: float = 3.0) -> list[dict]:
+               n_points: int = 9, dt: float = 2e-4, t_end: float = 3.0,
+               force_law: str = "analytic") -> list[dict]:
     """Vary ONE knob across its bounds (or discrete options), holding every other knob at
-    baseline's value. Returns [{"value": ..., "speed": ...}, ...] in the order tried."""
+    baseline's value. Returns [{"value": ..., "speed": ...}, ...] in the order tried.
+    `force_law`: "analytic" (default, matches optimize_design.py's own default) or
+    "fem_reference" -- see optimize_design.FORCE_LAWS / docs/FEM_PIPELINE.md. Sweeping the
+    SAME baseline under both is how you see where the two coupling models actually
+    disagree, rather than just trusting one of them."""
     values = _bound_values(knob, bounds, n_points)
     points = []
     for value in values:
         knobs = dataclasses.replace(baseline, **{knob: value})
-        points.append({"value": value, "speed": _safe_speed(knobs, bounds, dt, t_end)})
+        points.append({"value": value, "speed": _safe_speed(knobs, bounds, dt, t_end, force_law)})
     return points
 
 
 def full_sensitivity_report(baseline: DesignKnobs, bounds: Bounds = Bounds(),
                              n_points: int = 9, dt: float = 2e-4,
-                             t_end: float = 3.0) -> dict:
+                             t_end: float = 3.0, force_law: str = "analytic") -> dict:
     """OAT sweep for every knob. {knob_name: [{"value":..., "speed":...}, ...]}."""
     return {
-        knob: sweep_knob(knob, baseline, bounds, n_points=n_points, dt=dt, t_end=t_end)
+        knob: sweep_knob(knob, baseline, bounds, n_points=n_points, dt=dt, t_end=t_end,
+                          force_law=force_law)
         for knob in ALL_KNOBS
     }
 
 
 def interaction_sweep(knob_a: str, knob_b: str, baseline: DesignKnobs,
                        bounds: Bounds = Bounds(), n_points_a: int = 8, n_points_b: int = None,
-                       dt: float = 2e-4, t_end: float = 3.0) -> dict:
+                       dt: float = 2e-4, t_end: float = 3.0,
+                       force_law: str = "analytic") -> dict:
     """Vary TWO knobs across a grid simultaneously, holding everything else fixed at
     baseline. grid[i][j] is the speed at (values_a[i], values_b[j])."""
     values_a = _bound_values(knob_a, bounds, n_points_a)
@@ -91,7 +99,7 @@ def interaction_sweep(knob_a: str, knob_b: str, baseline: DesignKnobs,
         row = []
         for vb in values_b:
             knobs = dataclasses.replace(baseline, **{knob_a: va, knob_b: vb})
-            row.append(_safe_speed(knobs, bounds, dt, t_end))
+            row.append(_safe_speed(knobs, bounds, dt, t_end, force_law))
         grid.append(row)
     return {"knob_a": knob_a, "knob_b": knob_b, "values_a": values_a, "values_b": values_b,
             "grid": grid}

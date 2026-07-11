@@ -18,6 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only on Python 3.10
 
 from .plant import PendulumParams
 from .linear_plant import CoilStation, GateStation, LinearActuatorParams
+from .fem.lut import ForceLUT
 
 
 Number = int | float
@@ -160,6 +161,36 @@ class LinearCoilConfig:
     # LinearActuatorConfig.thermal_model is True.
     thermal_mass_j_per_k: float = 12.0
     thermal_resistance_k_per_w: float = 8.0
+    # Path to a fem.lut.ForceLUT .npz file (see tools/python/emac_sim/fem/cli.py's
+    # `emac-femgen`), resolved relative to the current working directory. When set, this
+    # coil's force law comes ENTIRELY from the swept table instead of x_c_m/c_mag_n_per_a2/
+    # k_a_n_per_a/i_sat_a -- see linear_plant.net_force. None (default) reproduces the
+    # exact prior analytic-lobe behavior for every existing config.
+    force_lut_path: str | None = None
+    # Physical winding geometry (see fem/geometry.py's CoilWindingGeometry / fem/
+    # from_config.py's coil_geometry_from_config) -- ONLY consumed by `emac-femgen`,
+    # never by to_actuator_params(). Not required for a normal (non-FEM) sim; kept here so
+    # the SAME config file that runs the sim can also drive table generation for it,
+    # rather than needing a second geometry-only file. Defaults describe a modest
+    # 200-turn/20mm coil, matching coil_design.py's own doc examples.
+    turns: int = 200
+    coil_winding_length_m: float = 0.020
+    radial_thickness_m: float = 0.010
+    bore_clearance_m: float = 0.0015
+    packing_factor: float = 0.8
+    winding_temperature_c: float = 20.0
+
+
+@dataclass(frozen=True)
+class SlugConfig:
+    """The moving PM slug's geometry -- see fem/geometry.py's SlugGeometry. ONE slug per
+    actuator (unlike per-coil config), since every coil in a linear stepper couples to the
+    same physical slug as it travels. Only consumed by `emac-femgen`, like the coil
+    geometry fields above. Defaults describe a modest N42-ish NdFeB rod."""
+
+    magnet_radius_m: float = 0.008
+    magnet_length_m: float = 0.020
+    remanence_t: float = 1.2
 
 
 @dataclass(frozen=True)
@@ -203,6 +234,7 @@ class LinearSimulationConfig:
     coils: list[LinearCoilConfig] = field(default_factory=_default_linear_coils)
     driver: DriverConfig = field(default_factory=DriverConfig)
     controller: LinearControllerConfig = field(default_factory=LinearControllerConfig)
+    slug: SlugConfig = field(default_factory=SlugConfig)
     duration_s: float = 3.0
     dt_s: float = 2e-4
     sample_every: int = 10
@@ -213,7 +245,8 @@ class LinearSimulationConfig:
                         i_sat=c.i_sat_a, k_a=c.k_a_n_per_a,
                         resistance_ohm=c.resistance_ohm, inductance_h=c.inductance_h,
                         thermal_mass_j_per_k=c.thermal_mass_j_per_k,
-                        thermal_resistance_k_per_w=c.thermal_resistance_k_per_w)
+                        thermal_resistance_k_per_w=c.thermal_resistance_k_per_w,
+                        force_lut=ForceLUT.load(c.force_lut_path) if c.force_lut_path else None)
             for c in self.coils
         )
         gates = tuple(
@@ -300,6 +333,7 @@ def _parse_linear_config(raw: Mapping[str, Any]) -> LinearSimulationConfig:
     coils = _linear_coils(raw)
     driver = _driver(raw.get("driver", {}))
     controller = _linear_controller(raw.get("controller", {}))
+    slug = _slug(raw.get("slug", {}))
     sim_raw = _section(raw, "sim")
 
     return LinearSimulationConfig(
@@ -308,6 +342,7 @@ def _parse_linear_config(raw: Mapping[str, Any]) -> LinearSimulationConfig:
         coils=coils,
         driver=driver,
         controller=controller,
+        slug=slug,
         duration_s=_float(sim_raw, "duration_s", 3.0),
         dt_s=_float(sim_raw, "dt_s", 2e-4),
         sample_every=_int(sim_raw, "sample_every", 10),
@@ -369,11 +404,27 @@ def _linear_coils(raw: Mapping[str, Any]) -> list[LinearCoilConfig]:
                 k_a_n_per_a=_float(data, "k_a_n_per_a", 0.20),
                 thermal_mass_j_per_k=_float(data, "thermal_mass_j_per_k", 12.0),
                 thermal_resistance_k_per_w=_float(data, "thermal_resistance_k_per_w", 8.0),
+                force_lut_path=_optional_str(data, "force_lut_path"),
+                turns=_int(data, "turns", 200),
+                coil_winding_length_m=_float(data, "coil_winding_length_m", 0.020),
+                radial_thickness_m=_float(data, "radial_thickness_m", 0.010),
+                bore_clearance_m=_float(data, "bore_clearance_m", 0.0015),
+                packing_factor=_float(data, "packing_factor", 0.8),
+                winding_temperature_c=_float(data, "winding_temperature_c", 20.0),
             )
         )
     if not coils:
         raise ValueError("At least one coil is required")
     return coils
+
+
+def _slug(raw: Any) -> SlugConfig:
+    data = _as_mapping(raw, "slug")
+    return SlugConfig(
+        magnet_radius_m=_float(data, "magnet_radius_m", 0.008),
+        magnet_length_m=_float(data, "magnet_length_m", 0.020),
+        remanence_t=_float(data, "remanence_t", 1.2),
+    )
 
 
 def _linear_controller(raw: Any) -> LinearControllerConfig:
@@ -522,6 +573,15 @@ def _float(data: Mapping[str, Any], key: str, default: float) -> float:
     if not isinstance(value, (int, float)):
         raise ValueError(f"{key!r} must be a number")
     return float(value)
+
+
+def _optional_str(data: Mapping[str, Any], key: str) -> str | None:
+    value = data.get(key, None)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{key!r} must be a string")
+    return value
 
 
 def _int(data: Mapping[str, Any], key: str, default: int) -> int:

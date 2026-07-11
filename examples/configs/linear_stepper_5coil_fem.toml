@@ -1,0 +1,100 @@
+# Same fictional 5-coil linear stepper as linear_stepper_5coil.toml, but each coil's force
+# law comes from a swept FEM/analytic-reference table instead of the analytic Gaussian-lobe
+# q_shape() shape -- see docs/FEM_PIPELINE.md. Generate the tables first:
+#
+#   emac-femgen --config examples/configs/linear_stepper_5coil_fem.toml \
+#       --outdir build/fem_lut_demo --n-offsets 15 --n-currents 9
+#
+# `emac-femgen` reads turns/coil_winding_length_m/radial_thickness_m/bore_clearance_m below
+# (and [slug]) to build each coil's axisymmetric geometry. Once the tables exist,
+# `emac-sim --config <this file>` uses them via each coil's force_lut_path -- x_c_m/
+# k_a_n_per_a/c_mag_n_per_a2/i_sat_a (the OLD analytic-lobe force law) are omitted below
+# entirely, since linear_plant.net_force ignores them for any coil with a force_lut set.
+
+[sim]
+kind = "linear_stepper"
+duration_s = 3.0
+dt_s = 0.0002
+sample_every = 10
+
+[actuator]
+mass_kg = 0.20
+damping_n_per_mps = 0.05
+initial_position_m = -0.03
+initial_velocity_m_s = 0.0
+end_of_travel = "coast"
+
+[slug]
+magnet_radius_m = 0.008
+magnet_length_m = 0.020
+remanence_t = 1.2
+
+[[gates]]
+position_m = -0.025
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.025
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.075
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.125
+effective_width_m = 0.004
+
+[[gates]]
+position_m = 0.175
+effective_width_m = 0.004
+
+[[coils]]
+position_m = 0.00
+turns = 200
+coil_winding_length_m = 0.020
+radial_thickness_m = 0.010
+force_lut_path = "build/fem_lut_demo/coil_00.npz"
+
+[[coils]]
+position_m = 0.05
+turns = 200
+coil_winding_length_m = 0.020
+radial_thickness_m = 0.010
+force_lut_path = "build/fem_lut_demo/coil_01.npz"
+
+[[coils]]
+position_m = 0.10
+turns = 200
+coil_winding_length_m = 0.020
+radial_thickness_m = 0.010
+force_lut_path = "build/fem_lut_demo/coil_02.npz"
+
+[[coils]]
+position_m = 0.15
+turns = 200
+coil_winding_length_m = 0.020
+radial_thickness_m = 0.010
+force_lut_path = "build/fem_lut_demo/coil_03.npz"
+
+[[coils]]
+position_m = 0.20
+turns = 200
+coil_winding_length_m = 0.020
+radial_thickness_m = 0.010
+force_lut_path = "build/fem_lut_demo/coil_04.npz"
+
+[driver]
+bus_voltage_v = 12.0
+pwm_frequency_hz = 20000.0
+current_loop = "rl"
+
+[controller]
+kind = "stepper_supervisor"
+target_velocity_m_s = 0.5
+k_velocity = 0.30
+pulse_width_half_period_fraction = 0.30
+phase_advance_s = 0.002
+bootstrap_dwell_s = 0.05
+bootstrap_timeout_s = 0.20
+i_max_a = 6.0

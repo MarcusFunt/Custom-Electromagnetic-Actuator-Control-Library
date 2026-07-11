@@ -26,10 +26,18 @@ Or run it directly for manual/stdio testing: `emac-mcp` (or `python -m emac_sim.
 
 | Tool | Use for |
 |---|---|
-| `run_optimization(maxiter, popsize, seed, dt, t_end, bounds_overrides, fault_warning_threshold)` | Runs the differential-evolution search (docs/DESIGN_OPTIMIZER.md's 11 knobs). Streams progress via the MCP progress channel and raises an explicit warning as soon as a generation's fault rate crosses `fault_warning_threshold` (default 90%), so a badly-bounded search is visible within the first generation or two. |
+| `run_optimization(maxiter, popsize, seed, dt, t_end, bounds_overrides, fault_warning_threshold, force_law)` | Runs the differential-evolution search (docs/DESIGN_OPTIMIZER.md's 11 knobs). Streams progress via the MCP progress channel and raises an explicit warning as soon as a generation's fault rate crosses `fault_warning_threshold` (default 90%), so a badly-bounded search is visible within the first generation or two. |
 | `get_latest_result()` | Returns the current contents of `build/optimize_results/latest.json` without running anything — useful for reattaching to a run in progress. |
-| `simulate_design_detailed(knobs, dt, t_end, bootstrap_timeout_s, max_samples)` | Full closed-loop time series (position/velocity/current/temperature, gate crossings) for one fully-specified design — run it on `best_knobs` to see *how* the winning design reaches its exit speed. |
-| `sensitivity_sweep(knob, baseline, bounds_overrides, n_points, dt, t_end)` | One-at-a-time main-effect curve for a single knob (wraps `design_sensitivity.sweep_knob`); `baseline` defaults to the latest optimization result. |
+| `simulate_design_detailed(knobs, dt, t_end, bootstrap_timeout_s, max_samples, force_law)` | Full closed-loop time series (position/velocity/current/temperature, gate crossings) for one fully-specified design — run it on `best_knobs` to see *how* the winning design reaches its exit speed. |
+| `sensitivity_sweep(knob, baseline, bounds_overrides, n_points, dt, t_end, force_law)` | One-at-a-time main-effect curve for a single knob (wraps `design_sensitivity.sweep_knob`); `baseline` defaults to the latest optimization result. |
+| `fem_coupling_analysis(knobs, coil_index, n_offsets, n_currents)` | Force-vs-slug-offset curves for one coil, comparing the default analytic coupling shape against `fem.reference_backend`'s real (non-Gaussian) shape, at a few current levels. `knobs` defaults to the latest optimization result. Writes `build/fem_lut/latest_analysis.json`. |
+
+`force_law` (on `run_optimization`/`simulate_design_detailed`/`sensitivity_sweep`) selects
+`"analytic"` (default, unchanged behavior) or `"fem_reference"` -- see
+docs/FEM_PIPELINE.md's "Using it in the design optimizer and sensitivity sweeps" for how much
+this can change both the reported speed and the winning design. `"fem_reference"` runs
+meaningfully slower per evaluation (a closed-form elliptic-integral call instead of a trivial
+exponential) -- budget `maxiter`/`popsize` accordingly.
 
 `run_optimization` intentionally does not expose `optimize_design.optimize()`'s `workers`
 option: the per-evaluation fault/best-so-far instrumentation used for progress reporting
@@ -48,8 +56,8 @@ Every `run_optimization` call overwrites `build/optimize_results/latest.json` af
 
 A self-contained, dependency-free HTML page (open it directly in a browser -- no server, no
 build step) that visualizes that live file, or any saved `simulate_design_detailed` /
-`sensitivity_sweep` / `design_sensitivity.interaction_sweep` result. It auto-detects which of
-the four JSON shapes it's been given.
+`sensitivity_sweep` / `design_sensitivity.interaction_sweep` / `fem_coupling_analysis` result.
+It auto-detects which of the five JSON shapes it's been given.
 
 **Watching a long run live:** click "Open results file..." and select `build/optimize_results/
 latest.json`. In Chrome/Edge (the File System Access API) the page keeps a handle to that file
@@ -71,5 +79,8 @@ What it shows for a running or finished search:
 
 Drop a `simulate_design_detailed` result in instead to see the winning design's position/
 velocity/current/temperature time series and gate crossings, a `sensitivity_sweep` result to
-see a knob's main-effect curve, or a `design_sensitivity.interaction_sweep` result (the raw
-Python module, not an MCP tool here) to see a pairwise heatmap.
+see a knob's main-effect curve, a `design_sensitivity.interaction_sweep` result (the raw
+Python module, not an MCP tool here) to see a pairwise heatmap, or a `fem_coupling_analysis`
+result to see one coil's force-vs-offset curve under both the analytic and FEM-reference
+coupling shapes (overlaid, color-coded by current level) alongside an axisymmetric coil/slug
+cross-section schematic and a peak-force divergence stat -- see docs/FEM_PIPELINE.md.

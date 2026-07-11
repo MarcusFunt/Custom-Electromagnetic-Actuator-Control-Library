@@ -43,12 +43,25 @@ from typing import Sequence
 from scipy.optimize import differential_evolution
 
 from . import coil_design
+from .fem.geometry import CoilWindingGeometry, SlugGeometry
+from .fem.reference_backend import AnalyticReferenceBackend
 from .linear_estimator import LinearStepperEstimator
-from .linear_plant import GateStation, LinearActuatorParams
+from .linear_plant import CoilStation, GateStation, LinearActuatorParams
 from .linear_sim import LinearSimulator
 from .linear_supervisor import FAULT, StepperSupervisor
 
 PUMP_ENVELOPES = ("rcos", "trapezoid", "square")
+# "analytic" (default): coil_design.build_coil_station's k_a/x_c estimate, evaluated
+# through plant.q_shape's Gaussian-lobe SHAPE at simulation time -- fast, and what every
+# search/sweep here has always used. "fem_reference": each coil's force law comes directly
+# from fem.reference_backend.AnalyticReferenceBackend instead -- the coil's REAL (non-
+# Gaussian) coupling shape, evaluated in closed form per query (no LUT file needed; it's
+# cheap enough -- ~0.1 ms/call -- to call live during a search). This is what makes the
+# design optimizer/sensitivity sweeps -- the actual analytical-work tools in this repo --
+# able to use FEM-consistent physics instead of the synthetic lobe; see
+# docs/FEM_PIPELINE.md. Both use the SAME winding electrical/thermal properties
+# (coil_design.wind_coil) -- only the FORCE law differs.
+FORCE_LAWS = ("analytic", "fem_reference")
 V_TGT_FULL_THRUST = 100.0   # m/s -- unreachable, so the velocity governor never throttles back
 
 
@@ -119,19 +132,54 @@ def decode(x: Sequence[float]) -> DesignKnobs:
     )
 
 
-def build_params(knobs: DesignKnobs) -> LinearActuatorParams:
+def _fem_reference_coil(position_m: float, knobs: DesignKnobs,
+                         backend: AnalyticReferenceBackend) -> CoilStation:
+    """A CoilStation whose force law is fem.reference_backend.AnalyticReferenceBackend
+    itself (bound as a closure -- see FORCE_LAWS above), rather than
+    coil_design.build_coil_station's k_a/x_c estimate. Winding electrical/thermal
+    properties still come from coil_design.wind_coil -- only the force law differs, so a
+    force_law="fem_reference" run stays comparable to "analytic" on everything else."""
+    slug = SlugGeometry(magnet_radius_m=knobs.magnet_radius_m,
+                         magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t)
+    coil_geometry = CoilWindingGeometry(position_m=position_m, turns=knobs.turns,
+                                         coil_length_m=knobs.coil_length_m,
+                                         radial_thickness_m=knobs.radial_thickness_m)
+    winding = coil_design.wind_coil(knobs.turns, knobs.coil_length_m, knobs.radial_thickness_m,
+                                     coil_geometry.bore_radius_m(slug))
+
+    def force_lut(offset_m: float, current_a: float,
+                  _coil: CoilWindingGeometry = coil_geometry, _slug: SlugGeometry = slug) -> float:
+        return backend.solve(_coil, _slug, offset_m, current_a).force_n
+
+    return CoilStation(position_m=position_m, resistance_ohm=winding.resistance_ohm,
+                        inductance_h=winding.inductance_h,
+                        thermal_mass_j_per_k=winding.thermal_mass_j_per_k,
+                        force_lut=force_lut)
+
+
+def build_params(knobs: DesignKnobs, force_law: str = "analytic") -> LinearActuatorParams:
     """Assemble a full LinearActuatorParams from a design vector. Coils are packed
     edge-to-edge (pitch == coil_length_m, no inter-coil gap) -- a simplification, real
-    builds need some clearance/former thickness between windings."""
+    builds need some clearance/former thickness between windings. `force_law` selects
+    between the default analytic coupling estimate and the FEM reference backend (see
+    FORCE_LAWS above) -- it changes NOTHING else about the design (mass, electrical/
+    thermal properties, driver, gates all stay identical), so results are comparable."""
+    if force_law not in FORCE_LAWS:
+        raise ValueError(f"unknown force_law: {force_law!r} (expected one of {FORCE_LAWS})")
+
     pitch = knobs.coil_length_m
-    coils = tuple(
-        coil_design.build_coil_station(
-            position_m=k * pitch, turns=knobs.turns, coil_length_m=knobs.coil_length_m,
-            radial_thickness_m=knobs.radial_thickness_m, magnet_radius_m=knobs.magnet_radius_m,
-            magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
+    if force_law == "analytic":
+        coils = tuple(
+            coil_design.build_coil_station(
+                position_m=k * pitch, turns=knobs.turns, coil_length_m=knobs.coil_length_m,
+                radial_thickness_m=knobs.radial_thickness_m, magnet_radius_m=knobs.magnet_radius_m,
+                magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
+            )
+            for k in range(knobs.n_coils)
         )
-        for k in range(knobs.n_coils)
-    )
+    else:
+        backend = AnalyticReferenceBackend()
+        coils = tuple(_fem_reference_coil(k * pitch, knobs, backend) for k in range(knobs.n_coils))
     gate_positions = [-0.5 * pitch] + [(k + 0.5) * pitch for k in range(knobs.n_coils - 1)]
     gates = tuple(GateStation(position_m=x, w_eff=0.002) for x in gate_positions)
     return LinearActuatorParams(
@@ -149,14 +197,14 @@ def build_params(knobs: DesignKnobs) -> LinearActuatorParams:
 
 
 def simulate_design(knobs: DesignKnobs, dt: float = 2e-4, t_end: float = 3.0,
-                     bootstrap_timeout_s: float = 0.05) -> float:
+                     bootstrap_timeout_s: float = 0.05, force_law: str = "analytic") -> float:
     """Exit speed (m/s) at the last gate, or 0.0 if the run FAULTed or never cleared a
     single gate (an infeasible or too-weak design) -- pushes the search away from that
     region the same way an explicit penalty would, without a separate constraint mechanism.
     `bootstrap_timeout_s` defaults short (vs. StepperSupervisor's own 0.20s) so hopeless
     candidates fail fast during a large search; pass the default back in for a final,
-    more patient verification run."""
-    p = build_params(knobs)
+    more patient verification run. `force_law`: see build_params / FORCE_LAWS."""
+    p = build_params(knobs, force_law=force_law)
     pitch = knobs.coil_length_m
     x0 = -0.5 * pitch - 0.001
     est = LinearStepperEstimator([g.position_m for g in p.gates], [g.w_eff for g in p.gates])
@@ -169,32 +217,35 @@ def simulate_design(knobs: DesignKnobs, dt: float = 2e-4, t_end: float = 3.0,
     return log.gate_v[-1]
 
 
-def _objective(x: Sequence[float], bounds: Bounds, dt: float, t_end: float) -> float:
+def _objective(x: Sequence[float], bounds: Bounds, dt: float, t_end: float,
+                force_law: str = "analytic") -> float:
     knobs = decode(x)
     if knobs.n_coils * knobs.coil_length_m > bounds.max_tube_length_m:
         return 0.0    # infeasible: over the tube-length budget: same as a 0-speed design
     try:
-        v = simulate_design(knobs, dt=dt, t_end=t_end)
+        v = simulate_design(knobs, dt=dt, t_end=t_end, force_law=force_law)
     except (ValueError, ZeroDivisionError):
         v = 0.0
     return -v   # differential_evolution MINIMIZES
 
 
 def optimize(bounds: Bounds = Bounds(), maxiter: int = 15, popsize: int = 12,
-             seed: int = 0, dt: float = 2e-4, t_end: float = 3.0, workers: int = 1):
+             seed: int = 0, dt: float = 2e-4, t_end: float = 3.0, workers: int = 1,
+             force_law: str = "analytic"):
     result = differential_evolution(
         _objective, bounds=_bounds_list(bounds), integrality=_INTEGRALITY,
-        args=(bounds, dt, t_end), maxiter=maxiter, popsize=popsize, seed=seed,
+        args=(bounds, dt, t_end, force_law), maxiter=maxiter, popsize=popsize, seed=seed,
         polish=False, workers=workers, updating="deferred" if workers != 1 else "immediate",
     )
     best_knobs = decode(result.x)
     # Re-verify at higher fidelity + the supervisor's normal (more patient) bootstrap
     # timeout -- the search itself uses a shorter one and a coarser dt to stay fast.
-    best_speed = simulate_design(best_knobs, dt=2e-5, t_end=t_end, bootstrap_timeout_s=0.20)
+    best_speed = simulate_design(best_knobs, dt=2e-5, t_end=t_end, bootstrap_timeout_s=0.20,
+                                  force_law=force_law)
     return best_knobs, best_speed, result
 
 
-def _print_design(knobs: DesignKnobs, speed: float) -> None:
+def _print_design(knobs: DesignKnobs, speed: float, force_law: str = "analytic") -> None:
     print(f"exit speed: {speed:.4f} m/s\n")
     print("driver:")
     print(f"  bus_voltage_v   = {knobs.bus_voltage_v:.1f}")
@@ -212,8 +263,9 @@ def _print_design(knobs: DesignKnobs, speed: float) -> None:
     print(f"  magnet_radius_m = {knobs.magnet_radius_m:.5f}")
     print(f"  magnet_length_m = {knobs.magnet_length_m:.5f}")
     print(f"  remanence_t     = {knobs.remanence_t:.3f}")
-    p = build_params(knobs)
+    p = build_params(knobs, force_law=force_law)
     print(f"  slug_mass_kg    = {p.mass_kg:.5f}")
+    print(f"  force_law       = {force_law}")
     w = coil_design.wind_coil(knobs.turns, knobs.coil_length_m, knobs.radial_thickness_m,
                               knobs.magnet_radius_m + 0.0015)
     print(f"  per-coil R={w.resistance_ohm:.3f} ohm, L={w.inductance_h*1e3:.4f} mH, "
@@ -232,6 +284,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dt", type=float, default=2e-4, help="Search-phase simulation step (s).")
     parser.add_argument("--t-end", type=float, default=3.0, help="Per-evaluation simulated duration (s).")
     parser.add_argument("--max-tube-length-m", type=float, default=1.0)
+    parser.add_argument("--force-law", choices=FORCE_LAWS, default="analytic",
+                        help="'analytic' (default): coil_design's k_a/x_c estimate through "
+                             "the synthetic q_shape lobe. 'fem_reference': each coil's real "
+                             "coupling shape via fem.reference_backend, evaluated live "
+                             "(no LUT file needed) -- see docs/FEM_PIPELINE.md.")
     return parser
 
 
@@ -239,14 +296,15 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     bounds = Bounds(max_tube_length_m=args.max_tube_length_m)
     print(f"searching: maxiter={args.maxiter} popsize={args.popsize} "
+          f"force_law={args.force_law} "
           f"(~{args.maxiter * args.popsize * 11} evaluations worst case)")
     best_knobs, best_speed, result = optimize(
         bounds=bounds, maxiter=args.maxiter, popsize=args.popsize, seed=args.seed,
-        dt=args.dt, t_end=args.t_end, workers=args.workers,
+        dt=args.dt, t_end=args.t_end, workers=args.workers, force_law=args.force_law,
     )
     print(f"\nsearch reported {-result.fun:.4f} m/s at low fidelity; "
           f"re-verified at high fidelity: {best_speed:.4f} m/s\n")
-    _print_design(best_knobs, best_speed)
+    _print_design(best_knobs, best_speed, force_law=args.force_law)
     return 0
 
 

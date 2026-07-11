@@ -36,6 +36,7 @@ stage for a soft-iron bob.
 | [`docs/DESIGN_OPTIMIZER.md`](docs/DESIGN_OPTIMIZER.md) | Design-space optimizer: the physical winding/magnet model, knobs, and how to run it. |
 | [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md) | Model Context Protocol interface: drive the optimizer from an LLM client with live progress/fault-rate reporting, plus the `tools/web/optimizer_dashboard.html` GUI. |
 | [`docs/PHYSICS_ENGINE_ANALYSIS.md`](docs/PHYSICS_ENGINE_ANALYSIS.md) | Host physics engine's numerical methods (integrator, event interpolation), known limits, and roadmap. |
+| [`docs/FEM_PIPELINE.md`](docs/FEM_PIPELINE.md) | FEM axisymmetric table-generation pipeline: geometry builder, FEMM/analytic-reference backends, `emac-femgen` CLI, and the LUT hook into the plant that replaces the synthetic coupling lobe. |
 
 ## Setup
 
@@ -102,6 +103,11 @@ scoped):
 emac-optimize --maxiter 25 --popsize 15
 ```
 
+Add `--force-law fem_reference` to search against the FEM reference backend's real coupling
+shape instead of the default analytic estimate -- see `docs/FEM_PIPELINE.md`'s "Using it in
+the design optimizer and sensitivity sweeps" section for how much this can actually change
+both the reported speed and the winning design.
+
 The legacy entrypoint still works:
 
 ```powershell
@@ -119,6 +125,20 @@ Exposes `run_optimization`, `simulate_design_detailed`, `sensitivity_sweep`, and
 `get_latest_result` as MCP tools, with live progress and per-generation fault-rate
 warnings so a long search's health is visible while it's still running. See
 `docs/MCP_SERVER.md`.
+
+## Generate FEM Force Tables for the Linear Stepper
+
+Replace the linear stepper's synthetic coupling lobe with a swept axisymmetric field
+table -- real FEM via [FEMM](http://www.femm.info/) if installed, or a shape-accurate
+analytic-reference backend if not:
+
+```powershell
+emac-femgen --config examples/configs/linear_stepper_5coil_fem.toml --outdir build/fem_lut
+emac-sim --config examples/configs/linear_stepper_5coil_fem.toml --outdir build/linear_fem
+```
+
+See `docs/FEM_PIPELINE.md` for the geometry knobs, backend choices, and how a coil's
+`force_lut_path` hooks into the plant.
 
 ## GUI: Watch an Optimizer Run Live
 

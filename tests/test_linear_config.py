@@ -125,6 +125,68 @@ def test_thermal_model_defaults_off_and_is_configurable():
     assert params.coils[0].thermal_resistance_k_per_w == pytest.approx(6.0)
 
 
+def test_coil_geometry_fields_default_and_are_configurable():
+    default = parse_config({"sim": {"kind": "linear_stepper"}})
+    coil = default.coils[0]
+    assert coil.turns == 200
+    assert coil.coil_winding_length_m == pytest.approx(0.020)
+    assert coil.radial_thickness_m == pytest.approx(0.010)
+    assert coil.bore_clearance_m == pytest.approx(0.0015)
+    assert coil.packing_factor == pytest.approx(0.8)
+    assert coil.winding_temperature_c == pytest.approx(20.0)
+    assert coil.force_lut_path is None
+
+    custom = parse_config({
+        "sim": {"kind": "linear_stepper"},
+        "coils": [{
+            "position_m": 0.0, "turns": 150, "coil_winding_length_m": 0.015,
+            "radial_thickness_m": 0.008, "bore_clearance_m": 0.001,
+            "packing_factor": 0.7, "winding_temperature_c": 45.0,
+        }],
+    })
+    coil = custom.coils[0]
+    assert coil.turns == 150
+    assert coil.coil_winding_length_m == pytest.approx(0.015)
+    assert coil.radial_thickness_m == pytest.approx(0.008)
+    assert coil.bore_clearance_m == pytest.approx(0.001)
+    assert coil.packing_factor == pytest.approx(0.7)
+    assert coil.winding_temperature_c == pytest.approx(45.0)
+
+
+def test_force_lut_path_defaults_to_none_and_flows_into_actuator_params(tmp_path):
+    import numpy as np
+
+    from emac_sim.fem.lut import ForceLUT
+
+    default = parse_config({"sim": {"kind": "linear_stepper"}})
+    assert default.coils[0].force_lut_path is None
+    assert default.to_actuator_params().coils[0].force_lut is None
+
+    lut_path = tmp_path / "coil_00.npz"
+    ForceLUT(
+        offsets_m=np.array([-0.01, 0.0, 0.01]),
+        currents_a=np.array([-1.0, 1.0]),
+        force_n=np.zeros((3, 2)),
+    ).save(lut_path)
+
+    with_lut = parse_config({
+        "sim": {"kind": "linear_stepper"},
+        "coils": [{"position_m": 0.0, "force_lut_path": str(lut_path)}],
+    })
+    assert with_lut.coils[0].force_lut_path == str(lut_path)
+    params = with_lut.to_actuator_params()
+    assert params.coils[0].force_lut is not None
+    assert params.coils[0].force_lut(0.0, 0.0) == pytest.approx(0.0)
+
+
+def test_force_lut_path_must_be_a_string():
+    with pytest.raises(ValueError):
+        parse_config({
+            "sim": {"kind": "linear_stepper"},
+            "coils": [{"position_m": 0.0, "force_lut_path": 123}],
+        })
+
+
 def test_linear_config_values_affect_run_scenario():
     from emac_sim.linear_cli import run_scenario
 
