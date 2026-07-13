@@ -9,6 +9,21 @@ Producing it required fixing three real bugs in `fem/femm_backend.py` (sign, air
 mesh) — see [`BUG_REVIEW.md`](BUG_REVIEW.md); those fixes are committed separately in the
 package source.
 
+## Requirements — FEMM is a core requirement (to *re-run* the study)
+**`run_study.py` / `study_lib.py` drive REAL axisymmetric FEMM solves — FEMM is a hard,
+core dependency, not optional.** The harness has no analytic fallback (that is what the
+committed `results/` dataset and the repo's reference backend are for): without FEMM every
+solve fails and the run produces nothing. To reproduce the dataset you need, on **Windows**:
+
+- the **FEMM application** — <http://www.femm.info/>
+- **`pip install pyfemm`** — the Python bindings the harness drives over ActiveX/COM
+- the project package — `pip install -e .[dev]` from the repo root (`numpy`/`scipy`)
+
+The **analysis tools** (`dashboard.html` + `build_dashboard.py`, `make_figures.py`,
+`detailed_trends.py`, `study_viz.py`) need only `numpy` (+ `matplotlib` for figures) — they
+read the committed `results/` and never touch FEMM. So you can explore all the trends with
+zero FEMM setup; you only need FEMM to regenerate the raw data.
+
 ## Open the GUI
 Double-click **[`dashboard.html`](dashboard.html)** (or drag it into any browser). It's a
 single self-contained file — no server, no build, no dependencies — with a live filter
@@ -45,11 +60,20 @@ laws). One JSON object per row:
 failures). Data quality: 0 sim errors, 99.9% of designs moved, 3/66 cells had ≤8% solve
 failures (NaN-filled).
 
-## Regenerate everything (reads `results/` only, needs numpy [+ matplotlib for figures])
+## Regenerate the analysis (no FEMM — reads `results/`, needs numpy [+ matplotlib])
 ```
-python build_dashboard.py     # -> dashboard.html
+python build_dashboard.py      # -> dashboard.html
 python make_figures.py         # -> figures/fig1..6.png
 python detailed_trends.py      # -> stdout (redirect to DETAILED_TRENDS.txt)
 ```
-`study_viz.py` is the shared loader/helpers. Not included here: the FEMM run harness
-(`run_study.py`, `study_lib.py`) that generated `results/` — it needs FEMM installed.
+`study_viz.py` is the shared loader/helpers.
+
+## Re-run the FEMM study itself (needs FEMM — see Requirements above)
+```
+python run_study.py            # ~9 h serial, real FEMM; writes into ./study/, resumable
+```
+`study_lib.py` is the bridge from the corrected FEMM backend into the exit-speed sim.
+Knobs via env vars: `STUDY_BUDGET_S` (wall-clock, default 9 h), `STUDY_WORKERS` (default 1 —
+serial; pyfemm COM isn't safe for concurrent instances), `STUDY_MAX_CELLS`, `STUDY_SUBDIR`.
+A fresh run writes to `studies/femm_trends/study/results/`, so it will not overwrite the
+canonical `results/` committed here.

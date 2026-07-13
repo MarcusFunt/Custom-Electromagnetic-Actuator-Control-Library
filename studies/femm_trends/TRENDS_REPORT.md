@@ -163,9 +163,10 @@ Additional findings the detailed pass surfaced:
 | `detailed_trends.py` | per-level tables, moderation, diminishing returns, feasibility, model-error, best-per-constraint, elasticities → `DETAILED_TRENDS.txt` |
 | `study_viz.py` | shared loading/labels/OLS helpers |
 
-`TRENDS_ANALYSIS.txt` is the headline text report; its generator (`analyze_study.py`) and the
-FEMM run harness that produced `results/` (`run_study.py`, `study_lib.py`, needs FEMM) are not
-committed here — ask if you want them.
+The FEMM run harness that produced `results/` is committed too: `run_study.py` +
+`study_lib.py` — these **require FEMM** (a core dependency; see the README's Requirements).
+`TRENDS_ANALYSIS.txt` is the headline text report; only its generator (`analyze_study.py`) is
+omitted — ask if you want it.
 
 **Figures:** `fig1` main-effect curves (10 knobs) · `fig2` polarity moderation (8 knobs) ·
 `fig3` interaction heatmap (all 45 two-way terms) · `fig4` 2-D design maps · `fig5`
