@@ -1,0 +1,109 @@
+
+==============================================================================
+1. PER-LEVEL MAIN EFFECTS (mean real-FEMM exit speed at each level, all-designs pooled)
+==============================================================================
+
+bus voltage (V)      [rising, span 1.83 m/s]
+   12:1.72   40:2.45   110:3.06   260:3.55
+
+current cap (A)      [rising, span 0.68 m/s]
+   20:2.36   70:3.04
+
+turns                [peaks @ level 3, span 1.08 m/s]
+   80:2.12   200:2.64   450:3.20   900:2.49
+
+coil length (mm)     [rising, span 1.81 m/s]
+   10mm:1.79   20mm:2.80   32mm:3.60
+
+winding thickness (mm) [falling, span 1.34 m/s]
+   5mm:3.54   14mm:2.75   28mm:2.20
+
+magnet radius (mm)   [falling, span 0.96 m/s]
+   4mm:3.17   8mm:2.71   15mm:2.21
+
+magnet length (mm)   [peaks @ level 2, span 1.27 m/s]
+   10mm:3.01   22mm:3.15   36mm:1.88
+
+remanence (T)        [rising, span 0.95 m/s]
+   0.5:2.26   0.9:2.46   1.25:3.21
+
+drive polarity       [rising, span 2.65 m/s]
+   unipolar:1.37   bipolar:4.02
+
+pulse shape          [rising, span 0.56 m/s]
+   rcos:2.42   square:2.98
+
+==============================================================================
+2. MODERATION — slope of each knob under unipolar vs bipolar drive (m/s per unit)
+==============================================================================
+knob                    unipolar     bipolar    ratio   interpretation
+coil length (mm)         42.5000    121.4753     2.86   bipolar amplifies
+magnet radius (mm)      -63.6095   -107.4748     1.69   bipolar amplifies
+winding thickness (mm)    -71.4807    -36.5554     0.51   
+magnet length (mm)      -31.5757    -55.9759     1.77   bipolar amplifies
+remanence (T)             0.1454      2.4308    16.71   bipolar amplifies
+current cap (A)           0.0058      0.0214     3.71   bipolar amplifies
+bus voltage (V)           0.0028      0.0103     3.73   bipolar amplifies
+turns                    -0.0003      0.0006    -1.75   sign flip!
+   voltage slope under rcos   : +0.517 m/s per 100 V
+   voltage slope under square : +0.787 m/s per 100 V
+
+==============================================================================
+3. DIMINISHING RETURNS — marginal gain per voltage step (bipolar drive)
+==============================================================================
+   12->40 V (+28 V): +1.07 m/s  (+3.817 m/s per 100 V)
+   40->110 V (+70 V): +0.98 m/s  (+1.401 m/s per 100 V)
+   110->260 V (+150 V): +0.80 m/s  (+0.533 m/s per 100 V)
+   => marginal m/s per volt shrinks with voltage: the returns are concave (saturating).
+
+   turns (bipolar): 80t:3.03  200t:3.86  450t:4.72  900t:3.90  -> peaks @ level 3 (best near 450 turns)
+
+==============================================================================
+4. FEASIBILITY — fraction of designs that stall (< 0.5 m/s), by factor level
+==============================================================================
+   drive polarity     unipolar:18.7%  bipolar:0.4%
+   pulse shape        rcos:11.1%  square:8.0%
+   bus voltage (V)    12:16.9%  40:7.4%  110:7.0%  260:6.8%
+   current cap (A)    20:10.6%  70:8.4%
+   remanence (T)      0.5:11.2%  0.9:9.8%  1.25:8.1%
+   coil length (mm)   10mm:12.4%  20mm:12.3%  32mm:3.8%
+
+==============================================================================
+5. WHERE THE CHEAP 'ANALYTIC' MODEL ERRS MOST (median overprediction vs FEMM, by level)
+==============================================================================
+   most overpredicted (cheap model most optimistic here):
+      winding thickness (mm)=5mm       +57%
+      magnet radius (mm)=4mm           +28%
+      coil length (mm)=32mm            +21%
+      turns=450                        +20%
+      bus voltage (V)=12               +18%
+      current cap (A)=20               +16%
+   least overpredicted:
+      coil length (mm)=20mm            +11%
+      turns=900                        +11%
+      magnet radius (mm)=15mm          +11%
+      winding thickness (mm)=28mm      +7%
+
+==============================================================================
+6. BEST DESIGNS PER CONSTRAINT (real-FEMM exit speed)
+==============================================================================
+   overall                    19.47 m/s  V=260 bi square i70 N450 Lc32 Tw5 Rm4 Lm22 Br1.25
+   best UNIPOLAR               7.50 m/s  V=260 uni square i70 N450 Lc32 Tw5 Rm4 Lm22 Br1.25
+   best at 12 V                8.64 m/s  V=12 bi square i70 N200 Lc32 Tw5 Rm4 Lm22 Br1.25
+   best at 40 V               11.69 m/s  V=40 bi square i70 N200 Lc32 Tw5 Rm4 Lm22 Br1.25
+   best at 110 V              15.42 m/s  V=110 bi square i70 N450 Lc32 Tw5 Rm4 Lm22 Br1.25
+   best at 260 V              19.47 m/s  V=260 bi square i70 N450 Lc32 Tw5 Rm4 Lm22 Br1.25
+   best light magnet (<=33%ile) 19.47 m/s  V=260 bi square i70 N450 Lc32 Tw5 Rm4 Lm22 Br1.25
+
+==============================================================================
+7. ELASTICITIES — % change in exit speed per +1% of each knob (at the data mean)
+==============================================================================
+   bus voltage (V)      +0.26%  per +1%
+   current cap (A)      +0.23%  per +1%
+   turns                +0.02%  per +1%
+   coil length (mm)     +0.62%  per +1%
+   winding thickness (mm) -0.36%  per +1%
+   magnet radius (mm)   -0.29%  per +1%
+   magnet length (mm)   -0.36%  per +1%
+   remanence (T)        +0.44%  per +1%
+
