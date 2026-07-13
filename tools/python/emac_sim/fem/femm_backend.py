@@ -94,7 +94,12 @@ class FemmBackend:
                              0, 1, 0, 0, 0, 0)
 
         outer_r = _AIR_MARGIN_FACTOR * coil.outer_radius_m(slug)
-        half_extent = _AIR_MARGIN_FACTOR * max(coil.coil_length_m, slug.magnet_length_m)
+        # The slug is drawn at z=-offset_m, so the air boundary must enclose it with margin
+        # at ANY swept offset -- a fixed part-size multiple leaves the slug on/outside the
+        # boundary once |offset| approaches it (the default sweep runs out to 5x the coupling
+        # scale, well past 6x a small part), which silently returns a spurious near-zero
+        # force there. Growing the half-extent with |offset| keeps the slug enclosed.
+        half_extent = _AIR_MARGIN_FACTOR * max(coil.coil_length_m, slug.magnet_length_m) + abs(offset_m)
 
         femm.mi_drawline(0, -half_extent, outer_r, -half_extent)
         femm.mi_drawline(outer_r, -half_extent, outer_r, half_extent)
@@ -119,7 +124,10 @@ class FemmBackend:
         femm.mi_drawline(0, slug_z1, 0, slug_z0)
         femm.mi_addblocklabel(0.5 * slug.magnet_radius_m, -offset_m)
         femm.mi_selectlabel(0.5 * slug.magnet_radius_m, -offset_m)
-        femm.mi_setblockprop("NdFeB", 1, mesh, "<None>", 90, _SLUG_GROUP, 0)
+        # automesh=0: honor the computed `mesh` size. With automesh=1 (the old value) FEMM
+        # ignores meshsize entirely, so mesh_size_m was a silent no-op and force noise
+        # (Maxwell-stress symmetry error) sat at ~3.3% instead of the ~0.6% this mesh gives.
+        femm.mi_setblockprop("NdFeB", 0, mesh, "<None>", 90, _SLUG_GROUP, 0)
         femm.mi_clearselected()
 
         # Coil: fixed at z=0 (the coordinate origin is the coil's own center).
@@ -135,7 +143,7 @@ class FemmBackend:
         femm.mi_drawline(bore_r, coil_z1, bore_r, coil_z0)
         femm.mi_addblocklabel(0.5 * (bore_r + outer_coil_r), 0.0)
         femm.mi_selectlabel(0.5 * (bore_r + outer_coil_r), 0.0)
-        femm.mi_setblockprop("Copper", 1, mesh, circuit, 0, _COIL_GROUP, coil.turns)
+        femm.mi_setblockprop("Copper", 0, mesh, circuit, 0, _COIL_GROUP, coil.turns)  # automesh=0 (see above)
         femm.mi_clearselected()
 
         femm.mi_saveas("_emac_femgen_tmp.fem")
@@ -146,4 +154,9 @@ class FemmBackend:
         force_n = femm.mo_blockintegral(19)  # axial weighted stress tensor force
         femm.mo_clearblock()
 
-        return ForcePoint(force_n=float(force_n))
+        # Negate: the raw type-19 axial force on the slug (drawn at z=-offset) comes out with
+        # the OPPOSITE sign to fem.reference_backend and linear_plant.net_force's convention
+        # (positive offset + positive current => attraction toward the coil). Without this a
+        # FEMM-built LUT drives the slug backward -> 0 exit speed for every design. Verified
+        # against AnalyticReferenceBackend, which is itself checked against plant.f_current_pm.
+        return ForcePoint(force_n=-float(force_n))

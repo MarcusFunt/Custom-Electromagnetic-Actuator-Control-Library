@@ -1,0 +1,88 @@
+loaded 4224 rows from study/results (66 geometry cells)
+FEMM rows: 2112 ; feasible (moved): 2110 (100%) ; best exit speed 19.47 m/s
+
+==============================================================================
+MAIN EFFECTS (real-FEMM exit speed), ranked by standardized slope
+==============================================================================
+                knob  std beta   low->high mean    unit effect
+      driver_bipolar    +1.323    1.37->  4.02     +2.65/unit
+       coil_length_m    +0.752    1.79->  3.60       +82/unit
+       bus_voltage_v    +0.626    1.72->  3.55  +0.00652/unit
+  radial_thickness_m    -0.502    3.54->  2.20       -54/unit
+     magnet_length_m    -0.469    3.01->  1.88     -43.8/unit
+         remanence_t    +0.395    2.26->  3.21     +1.29/unit
+     magnet_radius_m    -0.389    3.17->  2.21     -85.5/unit
+             i_max_a    +0.339    2.36->  3.04   +0.0136/unit
+       pump_envelope    +0.279    2.42->  2.98    +0.559/unit
+               turns    +0.036    2.12->  2.49 +0.000118/unit
+
+==============================================================================
+HEADLINE INTERACTIONS (plain language)
+==============================================================================
+
+* VOLTAGE x DRIVE POLARITY:
+    unipolar (positive-only): +0.276 m/s per +100 V
+    bipolar  (H-bridge +/-): +1.028 m/s per +100 V
+    => raising the bus voltage helps 3.73x as much with a bipolar (both-polarity) drive as with a unipolar one.
+
+* i_max_a x driver_bipolar:
+     unipolar: +0.006 m/s per +1 A of current cap
+      bipolar: +0.021 m/s per +1 A of current cap
+    => ratio 3.71x
+
+* bus_voltage_v x pump_envelope:
+         rcos: +0.517 m/s per +100 V
+       square: +0.787 m/s per +100 V
+    => ratio 1.52x
+
+* i_max_a x pump_envelope:
+         rcos: +0.014 m/s per +1 A of current cap
+       square: +0.013 m/s per +1 A of current cap
+    => ratio 0.95x
+
+* remanence_t x driver_bipolar:
+     unipolar: +0.145 m/s per +1 T remanence
+      bipolar: +2.431 m/s per +1 T remanence
+    => ratio 16.71x
+
+* turns x driver_bipolar:
+     unipolar: -0.032 m/s per +100 turns
+      bipolar: +0.055 m/s per +100 turns
+    => ratio -1.75x
+
+==============================================================================
+FULL OLS: main effects + all 2-way interactions (standardized)
+==============================================================================
+  (n=2112 designs; standardized beta = m/s change per 1 SD)
+
+                                          term     beta
+                                driver_bipolar   +1.323
+                                 coil_length_m   +0.692
+                                 bus_voltage_v   +0.626
+                            radial_thickness_m   -0.535
+                                   remanence_t   +0.500
+                               magnet_length_m   -0.438
+                bus_voltage_v x driver_bipolar   +0.361
+                  remanence_t x driver_bipolar   +0.345
+                                       i_max_a   +0.339
+                coil_length_m x driver_bipolar   +0.331
+                         bus_voltage_v x turns   +0.330
+                                 pump_envelope   +0.279
+                               magnet_radius_m   -0.271
+                               i_max_a x turns   -0.237
+              radial_thickness_m x remanence_t   -0.231
+              magnet_length_m x driver_bipolar   -0.230
+               coil_length_m x magnet_length_m   +0.228
+                   coil_length_m x remanence_t   +0.222
+                      i_max_a x driver_bipolar   +0.195
+                       i_max_a x coil_length_m   +0.180
+           radial_thickness_m x driver_bipolar   +0.167
+            bus_voltage_v x radial_thickness_m   -0.162
+
+==============================================================================
+ANALYTIC vs REAL-FEMM: does the cheap model mislead?
+==============================================================================
+  matched designs: 2112 ; both-moving: 2100
+  analytic mean exit speed 3.41 m/s vs FEMM 2.70 m/s
+  analytic overpredicts FEMM by median +14.7% (IQR +4.0%..+34.1%)
+  designs where analytic says 'moves' but FEMM says 'stalls': 8; opposite: 4
