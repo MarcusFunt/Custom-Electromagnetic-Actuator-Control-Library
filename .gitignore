@@ -12,3 +12,9 @@ dist/
 tools/python/out/
 .claude/
 CLAUDE.md
+
+# FEMM scratch files written to the working dir by fem/femm_backend.py (mi_saveas) and the
+# study's CorrectedFemmBackend; regenerated on every solve, never source.
+_emac_femgen_tmp.*
+_emac_femstudy_*.fem
+*.ans

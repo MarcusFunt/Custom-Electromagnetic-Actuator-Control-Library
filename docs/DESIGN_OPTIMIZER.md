@@ -84,12 +84,16 @@ single-loop Biot-Savart result (elliptic integrals, via `scipy.special.ellipk/el
 the magnet's length. B_rho is **odd about the magnet's own axial center** by symmetry --
 zero at the center, growing to an interior maximum somewhere between the center and a pole
 face, then decaying to zero far away -- structurally the same shape as `q_shape` (odd,
-zero at center, peaked lobes). `_peak_radial_coupling` finds that peak with a coarse grid
-scan (simple and robust, consistent with this model's overall rigor; cheap enough -- done
-once per coil at build time, not per simulation step -- not to matter for the optimizer's
+zero at center, peaked lobes). `_peak_winding_averaged_coupling` finds that peak with a
+coarse grid scan (simple and robust, consistent with this model's overall rigor; cheap
+enough -- done once per distinct coil geometry at build time, cached and reused across the
+identical coils of one design, not per simulation step -- not to matter for the optimizer's
 runtime), and `build_coil_station` uses **both** the peak value (for `k_a`) **and** its
 location (for `x_c`) -- x_c is no longer an independent heuristic, it's wherever that
-field profile actually peaks. `on_axis_field_cylinder_magnet` (the simpler on-axis-only
+field profile actually peaks. Crucially, the field it scans is **winding-averaged** over the
+whole (r, z) coil cross-section (`winding_averaged_force_per_amp`, the same kernel the FEM
+reference backend uses), not sampled at a single mean-radius point -- the single point
+over-stated `k_a` by 25-75% for coils whose length approaches the coupling scale. `on_axis_field_cylinder_magnet` (the simpler on-axis-only
 formula) is kept alongside as a cross-check anchor -- `off_axis_field_cylinder_magnet`
 (the B_z off-axis calculation, still available, just not what k_a uses) is checked against
 it in the rho->0 limit in tests.

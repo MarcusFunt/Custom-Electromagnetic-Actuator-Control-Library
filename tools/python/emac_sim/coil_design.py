@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
+import numpy as np
 from scipy import integrate
 from scipy.special import ellipe, ellipk
 
@@ -250,37 +252,108 @@ def off_axis_radial_field_cylinder_magnet(rho_m: float, z_m: float, magnet_radiu
     return surface_current_per_length * value
 
 
-def _peak_radial_coupling(mean_radius_m: float, magnet_radius_m: float, magnet_length_m: float,
-                           remanence_t: float, n_scan: int = 40) -> tuple[float, float]:
-    """(offset, B_rho at that offset) where |B_rho| peaks as the coil's axial position
-    varies relative to the magnet's center. Found by a coarse grid scan rather than a
-    gradient method -- simple and robust, consistent with this model's overall level of
-    rigor, and cheap enough (a few dozen field evaluations, done once per coil at design-
-    build time, not per simulation timestep) not to matter for the optimizer's runtime."""
-    half_length_m = magnet_length_m / 2.0
-    search_span_m = 1.5 * half_length_m + magnet_radius_m   # comfortably past the pole face
-    best_z, best_b = 0.0, 0.0
+# Gauss-Legendre nodes/weights for averaging B_rho over the winding cross-section (axial x
+# radial) -- the SAME 7x3 quadrature fem/reference_backend.py uses, kept here so both the
+# analytic-plant path (build_coil_station/estimate_k_a) and the swept-LUT path share ONE
+# force-per-amp kernel and cannot silently disagree (they used to: the plant's single-point
+# estimate over-stated peak thrust by 25-75% versus the LUT's winding-averaged value).
+_GL_Z_NODES, _GL_Z_WEIGHTS = np.polynomial.legendre.leggauss(7)
+_GL_R_NODES, _GL_R_WEIGHTS = np.polynomial.legendre.leggauss(3)
+
+
+def winding_averaged_force_per_amp(offset_m: float, bore_radius_m: float, outer_radius_m: float,
+                                    coil_length_m: float, turns: int, magnet_radius_m: float,
+                                    magnet_length_m: float, remanence_t: float) -> float:
+    """Axial force per amp (N/A, SIGNED) on the slug when the coil center sits at `offset_m`
+    from the magnet center. This is the physically correct coupling: F = i * integral over
+    the winding cross-section of B_rho(r, z) * (turn-length density) dA. Every turn at radius
+    r is a 2*pi*r loop, so B_rho is averaged over the (z, r) envelope WEIGHTED by r -- NOT
+    sampled at the single mean-radius/coil-center point, which over-states the force per amp
+    by ~25-75% for a coil whose length is comparable to the coupling scale (that one point
+    sits at the field maximum; the rest of the winding sees less). Reduces EXACTLY to the
+    single-point value in the uniform-field (thin, short coil) limit, so sign, odd symmetry,
+    and current-linearity are unchanged. Validated against real FEMM (the coil-Lorentz force)
+    to ~1-2% across geometries -- see tests/test_fem_femm_backend.py. Shared with
+    fem/reference_backend.py so the analytic plant and the FEM LUT use identical physics."""
+    half_len_m = 0.5 * coil_length_m
+    r_mid = 0.5 * (bore_radius_m + outer_radius_m)
+    r_half = 0.5 * (outer_radius_m - bore_radius_m)
+    num = 0.0
+    den = 0.0
+    for zn, zw in zip(_GL_Z_NODES, _GL_Z_WEIGHTS):
+        z_m = half_len_m * zn                       # coil center is the origin (z=0)
+        for rn, rw in zip(_GL_R_NODES, _GL_R_WEIGHTS):
+            r_m = r_mid + r_half * rn
+            b_rho = off_axis_radial_field_cylinder_magnet(
+                r_m, -offset_m + z_m, magnet_radius_m, magnet_length_m, remanence_t)
+            weight = zw * rw * r_m                   # turn-length weight ~ r
+            num += weight * b_rho
+            den += weight
+    b_rho_avg = num / den
+    wire_length_m = turns * 2.0 * math.pi * r_mid
+    return b_rho_avg * wire_length_m
+
+
+def _peak_winding_averaged_coupling(bore_radius_m: float, outer_radius_m: float,
+                                     coil_length_m: float, turns: int, magnet_radius_m: float,
+                                     magnet_length_m: float, remanence_t: float,
+                                     n_scan: int = 40) -> tuple[float, float]:
+    """(offset, winding-averaged force-per-amp at that offset) where |force/amp| peaks as the
+    coil's axial position varies relative to the magnet center. Coarse grid scan (simple and
+    robust, done once per coil at design-build time, not per timestep) over the coupling
+    scale -- which for a real winding sits farther out than a single mean-radius point's peak,
+    because the whole winding length, not just its center, has to straddle the magnet's
+    high-B_rho band. The scan span (1.2 coupling scales) comfortably brackets that peak."""
+    coupling_scale_m = 1.5 * coil_length_m + 0.5 * magnet_length_m
+    span_m = 1.2 * coupling_scale_m
+    best_off, best_f = 0.0, 0.0
     for k in range(1, n_scan + 1):
-        z = k * search_span_m / n_scan
-        b = off_axis_radial_field_cylinder_magnet(mean_radius_m, z, magnet_radius_m,
-                                                   magnet_length_m, remanence_t)
-        if abs(b) > abs(best_b):
-            best_z, best_b = z, b
-    return best_z, best_b
+        off = k * span_m / n_scan
+        f = winding_averaged_force_per_amp(off, bore_radius_m, outer_radius_m, coil_length_m,
+                                            turns, magnet_radius_m, magnet_length_m, remanence_t)
+        if abs(f) > abs(best_f):
+            best_off, best_f = off, f
+    return best_off, best_f
 
 
-def estimate_k_a(turns: int, mean_radius_m: float, magnet_radius_m: float,
-                  magnet_length_m: float, remanence_t: float) -> float:
-    """PM-branch thrust constant (N/A): F = k_a * i, the standard motor-design relation
-    F = B_gap * L_wire * i, using B_rho (the radial field component -- see
-    _loop_field_radial for why that's the physically correct one, not B_z) at wherever it
-    peaks for this coil's actual mean radius. Also replaces the earlier on-axis-at-a-
-    small-clearance approximation, which had no way to represent a radially-thick winding
-    coupling more weakly than a thin one sitting right at the bore -- a real effect once
-    radial_thickness_m is a sizeable fraction of magnet_radius_m."""
-    _, b_peak = _peak_radial_coupling(mean_radius_m, magnet_radius_m, magnet_length_m, remanence_t)
-    wire_length_m = turns * 2.0 * math.pi * mean_radius_m
-    return abs(b_peak) * wire_length_m
+def estimate_k_a(turns: int, mean_radius_m: float, radial_thickness_m: float,
+                  coil_length_m: float, magnet_radius_m: float, magnet_length_m: float,
+                  remanence_t: float) -> float:
+    """PM-branch thrust constant (N/A): peak of the WINDING-AVERAGED force per amp (see
+    winding_averaged_force_per_amp) over coil-magnet offset. F = k_a * i is the standard
+    motor relation F = B_gap * L_wire * i, but with B_gap taken as the r-weighted average of
+    the magnet's radial field over the actual winding envelope, not its single-point peak.
+    Requires the winding's radial build and axial length (bore = mean_radius - thickness/2,
+    outer = mean_radius + thickness/2) -- a radially-thick or axially-long winding couples
+    measurably more weakly than a thin one at the bore, which the old single-point estimate
+    over-stated by 25-75%."""
+    bore_radius_m = mean_radius_m - 0.5 * radial_thickness_m
+    outer_radius_m = mean_radius_m + 0.5 * radial_thickness_m
+    _, f_peak = _peak_winding_averaged_coupling(bore_radius_m, outer_radius_m, coil_length_m,
+                                                 turns, magnet_radius_m, magnet_length_m,
+                                                 remanence_t)
+    return abs(f_peak)
+
+
+@lru_cache(maxsize=512)
+def _coil_electromagnetics(turns: int, coil_length_m: float, radial_thickness_m: float,
+                            magnet_radius_m: float, magnet_length_m: float, remanence_t: float,
+                            bore_clearance_m: float, packing_factor: float,
+                            temperature_c: float) -> tuple[CoilWinding, float, float]:
+    """The position-INDEPENDENT electromagnetics of a coil/slug geometry: (winding, k_a,
+    x_c). Cached because build_coil_station is called once per coil station, but every coil
+    in one linear-stepper design shares the exact same geometry (only position_m differs) --
+    so the winding-averaged field scan (the expensive part, ~1000 closed-form field evals)
+    runs once per DISTINCT geometry instead of once per coil. The design optimizer builds
+    n_coils identical coils per candidate, so this turns an O(n_coils) build into O(1);
+    across candidates the geometry changes and the small LRU turns over harmlessly."""
+    bore_radius_m = magnet_radius_m + bore_clearance_m
+    winding = wind_coil(turns, coil_length_m, radial_thickness_m, bore_radius_m,
+                        packing_factor=packing_factor, temperature_c=temperature_c)
+    peak_offset_m, f_peak = _peak_winding_averaged_coupling(
+        bore_radius_m, bore_radius_m + radial_thickness_m, coil_length_m, turns,
+        magnet_radius_m, magnet_length_m, remanence_t)
+    return winding, abs(f_peak), peak_offset_m
 
 
 def build_coil_station(position_m: float, turns: int, coil_length_m: float,
@@ -291,17 +364,15 @@ def build_coil_station(position_m: float, turns: int, coil_length_m: float,
                         temperature_c: float = 20.0) -> CoilStation:
     """Assemble a full CoilStation from raw physical design knobs. bore_radius is derived
     as magnet_radius + a fixed clearance (not independently free) -- the coil bore has to
-    accommodate the slug, so its size isn't really a separate design decision. Both k_a
-    and x_c (coupling half-width) now come from the SAME B_rho peak search -- x_c is no
-    longer an independent heuristic, it's just where that peak actually occurs."""
-    bore_radius_m = magnet_radius_m + bore_clearance_m
-    winding = wind_coil(turns, coil_length_m, radial_thickness_m, bore_radius_m,
-                        packing_factor=packing_factor, temperature_c=temperature_c)
-    peak_offset_m, b_peak = _peak_radial_coupling(winding.mean_radius_m, magnet_radius_m,
-                                                   magnet_length_m, remanence_t)
-    wire_length_m = turns * 2.0 * math.pi * winding.mean_radius_m
-    k_a = abs(b_peak) * wire_length_m
-    x_c = peak_offset_m
+    accommodate the slug, so its size isn't really a separate design decision. Both k_a and
+    x_c (coupling half-width) come from the SAME winding-averaged force-per-amp curve the FEM
+    reference backend traces (winding_averaged_force_per_amp): k_a is its peak magnitude, x_c
+    the offset where that peak sits. Using the winding average (not the single mean-radius
+    point) keeps the analytic plant's peak thrust consistent with a swept FEM/analytic LUT
+    for the same geometry -- they used to disagree by 25-75%."""
+    winding, k_a, x_c = _coil_electromagnetics(
+        turns, coil_length_m, radial_thickness_m, magnet_radius_m, magnet_length_m,
+        remanence_t, bore_clearance_m, packing_factor, temperature_c)
     return CoilStation(position_m=position_m, x_c=x_c, Cmag=0.0, k_a=k_a,
                        resistance_ohm=winding.resistance_ohm,
                        inductance_h=winding.inductance_h,

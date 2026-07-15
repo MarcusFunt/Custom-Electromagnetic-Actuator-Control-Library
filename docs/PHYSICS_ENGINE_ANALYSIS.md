@@ -64,7 +64,13 @@ base class would hide important design decisions.
    feed the resulting resistance back into the `"rl"` current loop; `optimize_design.py`'s
    search runs with it on for every candidate. Driver current limits and supply-voltage
    droop under load are still not modeled, and the pendulum side has no thermal state at
-   all yet.
+   all yet. The pendulum's instantaneous-current model (no RL lag, no back-EMF) is a
+   deliberate idealization, not an oversight: it is a controller-validation testbed with an
+   ideal current source, and -- unlike the linear stepper's design optimizer -- it does not
+   search voltage-marginal designs, so there is no thrust overstatement for a back-EMF term
+   to correct. Adding a driver-limited pendulum mode would require a position-dependent
+   reluctance-coil inductance model, which has no calibration basis against the current
+   synthetic `q_shape`/`f_current` force map; it is deferred rather than invented.
 5. **No contact/end-stop mechanics.** The linear actuator has an end-of-travel mode in the
    params, but the plant itself still has no collision/contact model.
 
@@ -105,6 +111,48 @@ interpolation.
 - The linear plant's damping-only velocity update is exactly exponential.
 - The undriven, negligibly damped nonlinear pendulum keeps mechanical energy nearly constant
   over several periods.
+
+## Accuracy work in the physics-simulation-accuracy branch
+
+Two correctness bugs and one performance issue were found by validating the field models
+against a real FEMM solve (see `docs/VALIDATION.md` for the reproducible numbers).
+
+### 4. FEMM force extraction was non-convergent (fixed)
+
+The `FemmBackend` read the force on the slug from the **weighted Maxwell stress tensor over
+the magnet block** (FEMM block integral type 19). Integrated over a bare permanent-magnet
+block, that quantity does **not converge under mesh refinement** -- across a mesh sweep it
+was up to ~2x wrong and even flipped sign in the far field, because the magnet's own large
+internal B/H dominates the tensor and the auto-meshed air band around it is too coarse for
+the weighting function. Any LUT built from it was unreliable; the earlier tests only checked
+force *sign* at near-field points (where it happened to be right), so the bug hid.
+
+The fix reads the force as the **axial Lorentz force on the coil** (block integral type 12):
+the coil is linear, non-magnetic copper/air carrying a known current density, so `int(J x B)`
+over it is mesh-robust, and by Newton's third law it is the total force on the slug. It now
+agrees with the closed-form reference to ~1-2% and is mesh-stable and current-linear.
+`tests/test_fem_femm_backend.py` pins magnitude, mesh convergence, and current linearity.
+
+### 5. Analytic k_a over-stated thrust vs the FEM path (fixed)
+
+`estimate_k_a` / `build_coil_station` derived the PM thrust constant `k_a` from the magnet's
+radial field at a **single point** (the winding mean radius, at the peak axial offset), while
+`AnalyticReferenceBackend` correctly **averaged** that field over the whole winding
+cross-section. For a coil whose length is comparable to the coupling scale the single point
+sits at the field maximum and over-states the winding-averaged force per amp by 25-75%
+(confirmed against FEMM). So the default analytic optimizer path and the `fem_reference` path
+disagreed by that much on peak thrust for the same design.
+
+Both paths now call one shared kernel, `coil_design.winding_averaged_force_per_amp`, so the
+analytic plant's `k_a` equals the reference/FEM peak force per amp to quadrature precision
+(pinned by `tests/test_physics_validation.py`). The per-geometry field scan is cached
+(`_coil_electromagnetics`), so building N identical coils per optimizer candidate costs one
+field solve, not N.
+
+> Note: the design-trends study (`studies/femm_trends/`) predates fix #4 -- its
+> `CorrectedFemmBackend` still uses the stress-tensor extraction, so its absolute force
+> values (and any conclusions sensitive to them) should be treated with caution until the
+> sweep is regenerated with the coil-Lorentz extraction.
 
 ## Recommended next improvements
 

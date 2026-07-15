@@ -72,9 +72,11 @@ def test_stronger_remanence_gives_more_k_a_and_field():
     strong = on_axis_field_cylinder_magnet(0.0015, 0.006, 0.02, remanence_t=1.3)  # NdFeB-like
     assert strong > weak
 
-    k_a_weak = estimate_k_a(turns=200, mean_radius_m=0.008, magnet_radius_m=0.006,
+    k_a_weak = estimate_k_a(turns=200, mean_radius_m=0.008, radial_thickness_m=0.003,
+                             coil_length_m=0.02, magnet_radius_m=0.006,
                              magnet_length_m=0.02, remanence_t=0.4)
-    k_a_strong = estimate_k_a(turns=200, mean_radius_m=0.008, magnet_radius_m=0.006,
+    k_a_strong = estimate_k_a(turns=200, mean_radius_m=0.008, radial_thickness_m=0.003,
+                               coil_length_m=0.02, magnet_radius_m=0.006,
                                magnet_length_m=0.02, remanence_t=1.3)
     assert k_a_strong > k_a_weak
 
@@ -278,14 +280,18 @@ def test_off_axis_field_at_the_magnets_own_center_approaches_remanence_for_a_lon
 
 
 def test_thicker_radial_winding_couples_more_weakly_once_past_the_magnets_radius():
-    """The real effect the old on-axis-at-radial-gap approximation couldn't see: a coil
-    whose mean radius sits well outside the magnet's own radius couples much more weakly
-    than one sitting right at the bore -- confirmed here via estimate_k_a directly."""
-    magnet_radius, magnet_length, remanence, turns = 0.006, 0.02, 1.3, 200
-    k_a_thin = estimate_k_a(turns, mean_radius_m=magnet_radius + 0.0015,
+    """The real effect the old on-axis-at-radial-gap approximation couldn't see: spreading a
+    fixed number of turns over a thick radial build (mean radius well outside the magnet)
+    couples more weakly per amp than keeping them in a thin winding at the bore -- the outer
+    turns see a much weaker radial field even though each is longer. Confirmed via the
+    winding-averaged estimate_k_a, which now accounts for the whole (r, z) envelope."""
+    magnet_radius, magnet_length, remanence, turns, coil_length = 0.006, 0.02, 1.3, 200, 0.02
+    k_a_thin = estimate_k_a(turns, mean_radius_m=magnet_radius + 0.0015 + 0.0015,
+                            radial_thickness_m=0.003, coil_length_m=coil_length,
                             magnet_radius_m=magnet_radius, magnet_length_m=magnet_length,
                             remanence_t=remanence)
     k_a_thick = estimate_k_a(turns, mean_radius_m=magnet_radius + 0.02,
+                             radial_thickness_m=0.04, coil_length_m=coil_length,
                              magnet_radius_m=magnet_radius, magnet_length_m=magnet_length,
                              remanence_t=remanence)
     assert k_a_thick < k_a_thin

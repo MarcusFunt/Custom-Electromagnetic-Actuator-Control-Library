@@ -36,7 +36,8 @@ stage for a soft-iron bob.
 | [`docs/DESIGN_OPTIMIZER.md`](docs/DESIGN_OPTIMIZER.md) | Design-space optimizer: the physical winding/magnet model, knobs, and how to run it. |
 | [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md) | Model Context Protocol interface: drive the optimizer from an LLM client with live progress/fault-rate reporting, plus the `tools/web/optimizer_dashboard.html` GUI. |
 | [`docs/PHYSICS_ENGINE_ANALYSIS.md`](docs/PHYSICS_ENGINE_ANALYSIS.md) | Host physics engine's numerical methods (integrator, event interpolation), known limits, and roadmap. |
-| [`docs/FEM_PIPELINE.md`](docs/FEM_PIPELINE.md) | FEM axisymmetric table-generation pipeline: geometry builder, FEMM/analytic-reference backends, `emac-femgen` CLI, and the LUT hook into the plant that replaces the synthetic coupling lobe. |
+| [`docs/VALIDATION.md`](docs/VALIDATION.md) | How the engine's accuracy is *measured* (analytic coupling vs real FEMM to ~1-2%, integrator convergence order, energy/back-EMF closure), the numbers, and how to reproduce them for your own geometry. |
+| [`docs/FEM_PIPELINE.md`](docs/FEM_PIPELINE.md) | FEM axisymmetric table-generation pipeline: geometry builder, FEMM/analytic-reference backends, `emac-femgen` CLI, the `emac-femqc`/`emac-femcheck` analysis tools, and the LUT hook into the plant that replaces the synthetic coupling lobe. |
 
 ## Setup
 
@@ -140,14 +141,30 @@ emac-sim --config examples/configs/linear_stepper_5coil_fem.toml --outdir build/
 See `docs/FEM_PIPELINE.md` for the geometry knobs, backend choices, and how a coil's
 `force_lut_path` hooks into the plant.
 
-## GUI: Watch an Optimizer Run Live
+## GUI: One App to Run, Sweep, and Visualize
 
-Open [`tools/web/optimizer_dashboard.html`](tools/web/optimizer_dashboard.html) directly in a
-browser (no server, no build step) and point it at `build/optimize_results/latest.json` --
-in Chrome/Edge it keeps watching that file and updates the page live, generation by
-generation, with a progress bar/ETA, convergence chart, and the current best design's spec
-sheet. It also renders `simulate_design_detailed` and `sensitivity_sweep`/`interaction_sweep`
-results. See `docs/MCP_SERVER.md` for the full walkthrough.
+```powershell
+emac-gui
+```
+
+`emac-gui` starts a small local web app (stdlib only -- no new dependencies) and opens it in
+your browser. It unifies what used to be three separate pages into one **EMAC control lab**:
+
+- **Run a tool** -- pick any command (`emac-sim`, `emac-optimize`, `emac-femgen`, `emac-femqc`,
+  `emac-femcheck`), set its options in a form, run it, and watch its output stream live -- the
+  same as a terminal, but wired into the app.
+- **Sweep & estimate** -- configure a FEM force-table sweep (how *large*: offset/current/
+  geometry counts; how *detailed*: mesh fineness), get a real wall-clock **time estimate**
+  before you commit (it times a couple of solves and projects the whole run), then start it
+  and watch progress.
+- **Visualize LUTs** -- load the force tables a sweep produced and inspect the coupling curves,
+  each with an automatic physical-sanity (`emac-femqc`) verdict.
+- **Optimizer run** -- live convergence chart and best-design spec sheet from a running search
+  (`build/optimize_results/latest.json`).
+
+The older standalone pages (`tools/web/optimizer_dashboard.html`, the FEMM-trends
+`studies/femm_trends/dashboard.html`) still open directly in a browser with no server, but
+`emac-gui` supersedes them for interactive use -- it's the one that can also *run* things.
 
 ## Verify
 
