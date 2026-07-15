@@ -13,10 +13,23 @@ repo's own tests, which run on a machine without FEMM installed).
 Model: an axisymmetric ("axi") magnetostatics problem in meters. The slug is a uniformly
 axially-magnetized NdFeB cylinder (r in [0, magnet_radius_m], z centered per `offset_m`);
 the coil is a copper rectangular winding block (r in [bore_radius_m, outer_radius_m])
-carrying `current_a` through a `turns`-turn series circuit. Force on the slug is read via
-FEMM's weighted (Maxwell) stress tensor block integral (type 19, the axial component in
-axisymmetric problems) over the slug's block group -- the standard FEMM approach for force
-on a body fully surrounded by air, used throughout FEMM's own PM-actuator examples.
+carrying `current_a` through a `turns`-turn series circuit.
+
+Force extraction: the axial LORENTZ force on the COIL (FEMM block integral type 12 over the
+coil group), which by Newton's third law is equal and opposite to the force on the slug --
+and, because the coil is the only current-carrying body, is the total force on the slug's
+whole magnetic interaction with it. This deliberately does NOT use the weighted Maxwell
+stress tensor over the SLUG block (type 19), which is what a naive reading of FEMM's
+PM-actuator examples suggests: empirically (see tests/test_fem_femm_backend.py's
+convergence test) the stress tensor integrated over a bare permanent-magnet block does NOT
+converge under mesh refinement here -- it is up to ~2x wrong and even flips sign in the far
+field -- because the magnet's own huge internal B/H dominates the tensor and the thin
+auto-meshed air band around it is too coarse for the weighting function. The coil sits in
+linear, non-magnetic copper/air (mu_r = 1) carrying a known current density, so int(J x B)
+over it is mesh-robust and exact for this geometry. Validated against the closed-form
+AnalyticReferenceBackend (itself checked against plant.f_current_pm): the coil-Lorentz
+force agrees to ~1-2% across offsets/geometries and is linear in current to <0.3%, whereas
+the old slug-stress-tensor extraction agreed only near-field and diverged with mesh.
 """
 
 from __future__ import annotations
@@ -150,13 +163,16 @@ class FemmBackend:
         femm.mi_analyze(1)
         femm.mi_loadsolution()
 
-        femm.mo_groupselectblock(_SLUG_GROUP)
-        force_n = femm.mo_blockintegral(19)  # axial weighted stress tensor force
+        # Axial (z) Lorentz force on the coil block -- see this module's docstring for why
+        # this, not the weighted stress tensor over the slug. FEMM's raw type-12 value here
+        # already carries the SAME sign as fem.reference_backend / linear_plant.net_force's
+        # convention (positive offset + positive current => negative, restoring, force
+        # pulling the slug back toward the coil), verified point-by-point against
+        # AnalyticReferenceBackend -- so no negation is applied. By Newton's third law its
+        # magnitude is the force on the slug; because copper/air are linear and mu_r = 1,
+        # int(J x B) over the coil is the exact, mesh-robust total interaction force.
+        femm.mo_groupselectblock(_COIL_GROUP)
+        force_n = femm.mo_blockintegral(12)
         femm.mo_clearblock()
 
-        # Negate: the raw type-19 axial force on the slug (drawn at z=-offset) comes out with
-        # the OPPOSITE sign to fem.reference_backend and linear_plant.net_force's convention
-        # (positive offset + positive current => attraction toward the coil). Without this a
-        # FEMM-built LUT drives the slug backward -> 0 exit speed for every design. Verified
-        # against AnalyticReferenceBackend, which is itself checked against plant.f_current_pm.
-        return ForcePoint(force_n=-float(force_n))
+        return ForcePoint(force_n=float(force_n))

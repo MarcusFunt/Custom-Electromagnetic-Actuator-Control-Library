@@ -36,6 +36,7 @@ stage for a soft-iron bob.
 | [`docs/DESIGN_OPTIMIZER.md`](docs/DESIGN_OPTIMIZER.md) | Design-space optimizer: the physical winding/magnet model, knobs, and how to run it. |
 | [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md) | Model Context Protocol interface: drive the optimizer from an LLM client with live progress/fault-rate reporting, plus the `tools/web/optimizer_dashboard.html` GUI. |
 | [`docs/PHYSICS_ENGINE_ANALYSIS.md`](docs/PHYSICS_ENGINE_ANALYSIS.md) | Host physics engine's numerical methods (integrator, event interpolation), known limits, and roadmap. |
+| [`docs/VALIDATION.md`](docs/VALIDATION.md) | How the engine's accuracy is *measured* (analytic coupling vs real FEMM to ~1-2%, integrator convergence order, energy/back-EMF closure), the numbers, and how to reproduce them for your own geometry. |
 | [`docs/FEM_PIPELINE.md`](docs/FEM_PIPELINE.md) | FEM axisymmetric table-generation pipeline: geometry builder, FEMM/analytic-reference backends, `emac-femgen` CLI, and the LUT hook into the plant that replaces the synthetic coupling lobe. |
 
 ## Setup
