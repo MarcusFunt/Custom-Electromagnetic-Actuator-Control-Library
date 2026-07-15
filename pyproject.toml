@@ -34,6 +34,8 @@ emac-visual = "emac_sim.visual:main"
 emac-optimize = "emac_sim.optimize_design:main"
 emac-mcp = "emac_sim.mcp_server:main"
 emac-femgen = "emac_sim.fem.cli:main"
+emac-femqc = "emac_sim.fem.quality:main"
+emac-femcheck = "emac_sim.fem.convergence:main"
 
 [tool.setuptools.packages.find]
 where = ["tools/python"]

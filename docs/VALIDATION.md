@@ -85,6 +85,41 @@ default pure-PM slug this makes the back-EMF power `e·i` equal the mechanical p
 exactly, tick by tick -- mechanical work is drawn from the electrical source rather than
 created from nothing.
 
+## Tooling for a large FEM run
+
+A big FEM sweep produces hundreds of expensive, black-box force tables. Three tools make
+that trustworthy instead of hopeful:
+
+**Before the run -- pick a mesh and estimate the cost** (`emac-femcheck`, needs FEMM):
+
+```powershell
+emac-femcheck --config examples/configs/linear_stepper_5coil_fem.toml --n-geometries 100
+```
+
+Solves one representative point at a ladder of mesh sizes, reports whether the force has
+converged, recommends the coarsest safe mesh, and projects the whole sweep's wall-clock from
+timed sample solves. (On the corrected backend a representative coil converges to <1% by the
+default mesh; the old extraction never did -- that is the check that was missing.)
+
+**After the run -- QC every table** (`emac-femqc`, no FEMM needed):
+
+```powershell
+emac-femqc studies/femm_trends/study/luts   # scans every .npz, exits non-zero if any suspect
+```
+
+Scores each `ForceLUT` against the physical invariants a real coil-magnet coupling must
+satisfy (finite; zero-current and centered nulls; far-field decay; restoring sign; odd
+symmetry; current linearity; a monotone tail with no far-field bumps) and prints only the
+suspect ones. Every one of these invariants was violated by the old stress-tensor extraction,
+so this would have caught that bug automatically. `check_lut` / `check_backend` are the
+library entry points; pass `--reluctance-slug` to skip the (deliberately) inapplicable
+current-linearity check for an iron slug.
+
+**Division of labour:** `emac-femqc` catches *shape* errors (sign, symmetry, non-monotone
+tails, nonlinearity) from a single table; a uniform *magnitude* error (e.g. the old
+extraction's ~2x over-estimate) looks self-consistent in isolation and is caught instead by
+`fem/validate.py`'s cross-check against the analytic reference. Run both.
+
 ## Known limitations (accuracy caveats)
 
 - **Slug iron / saturation.** Both the analytic model and the (validated) FEMM path model a
