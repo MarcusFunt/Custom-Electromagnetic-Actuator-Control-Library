@@ -76,12 +76,17 @@ class CoilWindingGeometry:
 COUPLING_SCALE_FACTOR = 1.5   # x coil_length_m, plus 0.5x magnet_length_m -- see coupling_scale_m
 FAR_SPAN_FACTOR = 5.0
 # The coupling's PEAK sits partway out into the falloff (not at offset=0, a ZERO of this
-# coupling -- see reference_backend's odd-symmetry test), and its curvature stays
-# significant well past the "near-field scale" itself: FINE_SPAN_FACTOR widens the
-# uniformly-resolved region to 1.5x that scale, which is what actually brought a typical
-# adjacent-coil pitch (comparable to 1x the near-field scale) inside the well-resolved
-# region instead of landing right in the coarse part of the tail grid.
-FINE_SPAN_FACTOR = 1.5
+# coupling -- see reference_backend's odd-symmetry test). FINE_SPAN_FACTOR sets how far the
+# uniformly-resolved region extends, as a multiple of the coupling scale. 1.0x concentrates
+# the fine points across exactly the peak-and-initial-falloff region (the peak sits at
+# roughly 0.3x the coupling scale, and the curve is into its smooth tail by 1.0x), which is
+# what the WINDING-AVERAGED reference force (reference_backend.solve integrates B_rho over
+# the coil cross-section rather than sampling it at one point) needs: that curve rises more
+# steeply out of the offset=0 null than the old single-point estimate did, so spreading the
+# fine budget out to the old 1.5x left the steep near-origin region under-resolved (~16%
+# worst-case linear-interpolation error at the default geometry, vs ~5% at 1.0x). See
+# tests/test_fem_analysis_regression.py.
+FINE_SPAN_FACTOR = 1.0
 
 
 def coupling_scale_m(coil: CoilWindingGeometry, slug: SlugGeometry) -> float:
@@ -92,7 +97,7 @@ def coupling_scale_m(coil: CoilWindingGeometry, slug: SlugGeometry) -> float:
 
 
 def default_sweep_ranges(coil: CoilWindingGeometry, slug: SlugGeometry,
-                          n_offsets: int = 31, n_currents: int = 11,
+                          n_offsets: int = 41, n_currents: int = 11,
                           max_current_a: float = 6.0) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """A reasonable default (offset, current) grid for sweeping this coil.
 

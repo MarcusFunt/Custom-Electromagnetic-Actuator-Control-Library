@@ -21,9 +21,19 @@ pulls the slug back toward the coil (attraction), matching plant.f_current_pm.
 
 from __future__ import annotations
 
+import numpy as np
+
 from ..coil_design import off_axis_radial_field_cylinder_magnet
 from .backend import ForcePoint
 from .geometry import CoilWindingGeometry, SlugGeometry, wire_length_m
+
+# Gauss-Legendre nodes/weights for averaging B_rho over the winding cross-section (axial x
+# radial). 7x3 keeps the quadrature error below ~0.6% of the true winding-averaged force
+# across the geometries the optimizer explores (checked in tests) while staying only ~21
+# field evaluations per solve. The nodes/weights are on [-1, 1]; solve() maps them onto the
+# winding's actual (z, r) extent.
+_GL_Z_NODES, _GL_Z_WEIGHTS = np.polynomial.legendre.leggauss(7)
+_GL_R_NODES, _GL_R_WEIGHTS = np.polynomial.legendre.leggauss(3)
 
 
 class AnalyticReferenceBackend:
@@ -33,10 +43,34 @@ class AnalyticReferenceBackend:
 
     def solve(self, coil: CoilWindingGeometry, slug: SlugGeometry,
               offset_m: float, current_a: float) -> ForcePoint:
-        mean_radius_m = coil.mean_radius_m(slug)
-        b_rho = off_axis_radial_field_cylinder_magnet(
-            mean_radius_m, -offset_m, slug.magnet_radius_m, slug.magnet_length_m,
-            slug.remanence_t,
-        )
-        force_n = current_a * b_rho * wire_length_m(coil, slug)
+        # The axial force on the winding is F = i * integral over the winding cross-section
+        # of B_rho(r, z) * (turn-length density) dA. Every turn at radius r contributes a
+        # 2*pi*r loop, so the correct field to use is B_rho AVERAGED over the (z, r) envelope
+        # WEIGHTED by r -- NOT B_rho at the single mean-radius/coil-center point, which
+        # over-estimates the peak force per amp by ~60% for a coil whose length is comparable
+        # to the coupling scale (the single point sits at the field maximum; the rest of the
+        # winding sees less). This averaged form reduces EXACTLY to the old single-point
+        # expression in the uniform-field limit, so the sign/odd-symmetry/linearity
+        # properties are unchanged.
+        bore_m = coil.bore_radius_m(slug)
+        outer_m = coil.outer_radius_m(slug)
+        half_len_m = 0.5 * coil.coil_length_m
+        r_mid, r_half = 0.5 * (bore_m + outer_m), 0.5 * (outer_m - bore_m)
+
+        num = 0.0
+        den = 0.0
+        for zn, zw in zip(_GL_Z_NODES, _GL_Z_WEIGHTS):
+            z_m = half_len_m * zn                       # coil center is the origin (z=0)
+            for rn, rw in zip(_GL_R_NODES, _GL_R_WEIGHTS):
+                r_m = r_mid + r_half * rn
+                b_rho = off_axis_radial_field_cylinder_magnet(
+                    r_m, -offset_m + z_m, slug.magnet_radius_m, slug.magnet_length_m,
+                    slug.remanence_t,
+                )
+                weight = zw * rw * r_m                  # turn-length weight ~ r
+                num += weight * b_rho
+                den += weight
+        b_rho_avg = num / den
+
+        force_n = current_a * b_rho_avg * wire_length_m(coil, slug)
         return ForcePoint(force_n=force_n)

@@ -16,6 +16,15 @@ with a lag set by that coil's L/R time constant -- including a nonzero decay tai
 "hard cut", since current can't jump discontinuously. `p.current_loop == "ideal"` (the
 default) keeps the pre-inductance behavior: current snaps to the target instantly.
 
+The "rl" electrical step now also includes each coil's MOTIONAL BACK-EMF, e = (dF/di)*v_slug
+(linear_plant.coil_force_gradient), the generator voltage the moving magnet induces in the
+coil -- the exact reciprocal of the force the same current produces, so the mechanical work
+done on the slug is drawn from the electrical source rather than created from nothing (energy
+conservation, verified to ~1e-9 closure). This is the physical loading a fast slug puts on
+its own driver: previously current tracked the commanded profile regardless of slug speed,
+silently overstating thrust for exactly the voltage-marginal designs the optimizer explores.
+"ideal" mode has no electrical model at all, so it carries no back-EMF either.
+
 The mechanical step is also CFL-limited (see run()): a fixed dt tuned for the reference
 build can silently under-resolve much lighter/faster designs, letting the slug cover more
 than a whole coupling half-width (x_c) in one nominal tick and skip clean over a coil's
@@ -107,9 +116,17 @@ class LinearSimulator:
                 for k in range(n_coils):
                     target_k = i_target if k == out.coil_index else 0.0
                     r_override = resistances[k] if resistances is not None else None
+                    # Motional back-EMF: e = (dF/di)*v_slug, the same coupling that produces
+                    # this coil's force (Maxwell reciprocity), evaluated at the current slug
+                    # offset and this coil's present current. A coil far from the slug has
+                    # ~zero coupling, so its idle current is unaffected; the active coil sees
+                    # the real loading a fast slug puts on its driver.
+                    e_bemf = linear_plant.coil_force_gradient(
+                        p.coils[k], x - p.coils[k].position_m, currents[k]) * v
                     currents[k] = linear_plant.coil_current_step(
                         currents[k], target_k, p.coils[k], p.bus_voltage_v, self.dt,
                         bipolar=p.driver_bipolar, resistance_ohm_override=r_override,
+                        back_emf_v=e_bemf,
                     )
             else:
                 currents = [0.0] * n_coils

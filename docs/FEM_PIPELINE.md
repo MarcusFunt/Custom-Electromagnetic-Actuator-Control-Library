@@ -15,7 +15,7 @@ changes behavior unless a coil sets `force_lut_path`.
 |---|---|
 | `fem/geometry.py` | `CoilWindingGeometry` / `SlugGeometry` -- the same physical knobs `coil_design.py` already uses (turns, coil dimensions, magnet dimensions, remanence). |
 | `fem/backend.py` | `FEMBackend` protocol: `solve(coil, slug, offset_m, current_a) -> ForcePoint`. |
-| `fem/reference_backend.py` | Analytic backend (closed-form Biot-Savart, reusing `coil_design.off_axis_radial_field_cylinder_magnet`) evaluated at the requested offset instead of only at its peak. **Not a real FEM solve** -- no iron, no saturation, vacuum permeability everywhere -- but it traces the coil's actual (non-Gaussian) coupling shape and needs no external tools, so it's both the default backend and what this repo's own tests run against. |
+| `fem/reference_backend.py` | Analytic backend (closed-form Biot-Savart, reusing `coil_design.off_axis_radial_field_cylinder_magnet`) evaluated at the requested offset instead of only at its peak, and AVERAGED over the winding cross-section (a 7x3 Gauss-Legendre quadrature over the coil's axial length and radial build, turn-length weighted) rather than sampled at the single mean-radius/coil-center point. That single point sits at the field maximum, so sampling it there over-states the peak force per amp by ~60% for a coil whose length is comparable to the coupling scale; the average reduces exactly to the single point in the vanishing-winding limit. **Not a real FEM solve** -- no iron, no saturation, vacuum permeability everywhere -- but it traces the coil's actual (non-Gaussian) coupling shape and needs no external tools, so it's both the default backend and what this repo's own tests run against. |
 | `fem/femm_backend.py` | Real backend: builds and solves an axisymmetric magnetostatic problem in [FEMM](http://www.femm.info/) via its optional `femm` Python module, and reads force off the Maxwell stress tensor. Raises `FemmNotAvailableError` with a clear message if FEMM isn't installed -- everything else in this package works without it. |
 | `fem/sweep.py` | Sweeps a backend over a (offset, current) grid into a `ForceLUT`. |
 | `fem/lut.py` | `ForceLUT`: `.npz` save/load + edge-clamped bilinear interpolation, callable as `(offset_m, current_a) -> force_n`. Clamps rather than extrapolates -- a sweep is only trustworthy inside the region it actually sampled. |
@@ -83,7 +83,11 @@ matter for the result to be trustworthy for actual analysis (not just plumbing t
   single geometrically-spaced grid concentrated around offset=0 was tried first and
   rejected for exactly this reason. `_two_region_grid` instead spends most of its point
   budget on a uniform fine grid covering the peak and initial falloff, and only a sparse
-  tail beyond that.
+  tail beyond that. The default resolution is `--n-offsets 41` and the fine region spans
+  `FINE_SPAN_FACTOR = 1.0` coupling scales: the winding-averaged reference force rises more
+  steeply out of the offset=0 null than the earlier single-point estimate, so the fine
+  budget is both larger and concentrated where that curvature is (worst-case linear-
+  interpolation error ~5% at the default geometry, vs ~16% with the old 31-point/1.5x span).
 
 If you widen a coil's geometry drastically or need tighter accuracy, prefer raising
 `--n-offsets` over hand-tuning the span constants -- the two-region allocation already

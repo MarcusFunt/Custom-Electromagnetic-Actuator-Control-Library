@@ -73,14 +73,8 @@ def wind_coil(turns: int, coil_length_m: float, radial_thickness_m: float,
 
     resistivity = copper_resistivity_ohm_m(temperature_c)
     resistance_ohm = resistivity * total_wire_length_m / wire_area_m2
-    # Wheeler's (1928) single-layer air-core solenoid approximation -- unlike the plain
-    # long-solenoid formula (L = mu0*N^2*A/length, only accurate when length >> radius),
-    # Wheeler's fits well across BOTH long and short/fat coils, which matters here since
-    # the optimizer explores coil_length_m from 5mm up -- often comparable to or smaller
-    # than the radius, i.e. not "long" in the solenoid sense at all. Reduces to the plain
-    # long-solenoid formula within ~0.3% in the length >> radius limit (checked in tests).
-    inductance_h = (3.937e-5 * mean_radius_m**2 * turns**2
-                    / (9.0 * mean_radius_m + 10.0 * coil_length_m))
+    inductance_h = _solenoid_inductance_h(mean_radius_m, coil_length_m,
+                                          radial_thickness_m, turns)
 
     # Thermal mass from the copper itself, not a fabricated constant: total copper volume
     # is (mean turn circumference) x (copper cross-sectional area) -- turns cancels out
@@ -97,6 +91,61 @@ def wind_coil(turns: int, coil_length_m: float, radial_thickness_m: float,
     return CoilWinding(resistance_ohm=resistance_ohm, inductance_h=inductance_h,
                        wire_diameter_m=wire_diameter_m, mean_radius_m=mean_radius_m,
                        thermal_mass_j_per_k=thermal_mass_j_per_k)
+
+
+# Wheeler's µH-per-inch constant expressed for SI (meters, henries): 1e-6 H/µH divided by
+# 0.0254 m/inch. Every length in both Wheeler formulas below is a ratio of like lengths, so
+# this single factor converts either formula from its native inch/µH form to meters/henries.
+_WHEELER_SI = 1.0e-6 / 0.0254   # == 3.937e-5
+
+# Above this radial-build-to-mean-radius ratio a winding is firmly "multi-layer" and the
+# single-layer formula is used at zero weight; below it the two are blended linearly. 0.2 is
+# where Wheeler's own single- and multi-layer fits cross over in accuracy against a direct
+# Maxwell mutual-inductance sum (both within a few percent there); see
+# tests/test_coil_design.py's blend-vs-numeric checks.
+_MULTILAYER_RATIO_THRESHOLD = 0.2
+
+
+def _wheeler_single_layer_h(mean_radius_m: float, coil_length_m: float, turns: int) -> float:
+    """Wheeler's (1928) single-layer air-core solenoid formula, in henries. Unlike the plain
+    long-solenoid formula (L = mu0*N^2*A/length, only accurate when length >> radius), this
+    fits well across both long and short/fat coils, and reduces to the long-solenoid form
+    within ~0.3% in the length >> radius limit (checked in tests). It assumes a single
+    cylindrical current sheet -- no radial build -- so it OVER-estimates a thick multi-layer
+    winding (the outer layers enclose less flux than the innermost); see
+    _wheeler_multilayer_h and _solenoid_inductance_h."""
+    return _WHEELER_SI * mean_radius_m ** 2 * turns ** 2 / (9.0 * mean_radius_m + 10.0 * coil_length_m)
+
+
+def _wheeler_multilayer_h(mean_radius_m: float, coil_length_m: float,
+                          radial_thickness_m: float, turns: int) -> float:
+    """Wheeler's (1928) multi-layer air-core formula L = 0.8*a^2*N^2/(6a+9b+10c) (a = mean
+    radius, b = axial length, c = radial build), in henries. The `+10c` term is what the
+    single-layer formula lacks: it accounts for the outer layers linking progressively less
+    flux, which is a first-order effect once the radial build c is a sizeable fraction of the
+    mean radius a -- exactly the regime the design optimizer explores (radial_thickness_m up
+    to 40mm on a ~10mm-radius coil). Agrees with a direct Maxwell mutual-inductance double
+    sum to within a few percent there, where the single-layer formula over-estimates by
+    30-75%."""
+    return (0.8 * _WHEELER_SI * mean_radius_m ** 2 * turns ** 2
+            / (6.0 * mean_radius_m + 9.0 * coil_length_m + 10.0 * radial_thickness_m))
+
+
+def _solenoid_inductance_h(mean_radius_m: float, coil_length_m: float,
+                           radial_thickness_m: float, turns: int) -> float:
+    """Air-core winding self-inductance (H), blending Wheeler's single-layer and multi-layer
+    formulas by the radial-build ratio c/a. Neither formula is uniformly best: the
+    single-layer form is the more accurate of the two for a genuinely thin winding (c/a -> 0,
+    where the multi-layer fit's constants are slightly off), while the multi-layer form is
+    far better once the winding has real radial depth (the single-layer form ignores c
+    entirely and over-estimates by 30-75% for the thick coils the optimizer explores). Blend
+    linearly in c/a up to _MULTILAYER_RATIO_THRESHOLD, then use the multi-layer form alone.
+    Validated against a direct Maxwell mutual-inductance sum across thin/thick and short/long
+    geometries (max ~4% error) in tests/test_coil_design.py."""
+    single = _wheeler_single_layer_h(mean_radius_m, coil_length_m, turns)
+    multi = _wheeler_multilayer_h(mean_radius_m, coil_length_m, radial_thickness_m, turns)
+    w = min(1.0, (radial_thickness_m / mean_radius_m) / _MULTILAYER_RATIO_THRESHOLD)
+    return (1.0 - w) * single + w * multi
 
 
 def magnet_mass_kg(magnet_radius_m: float, magnet_length_m: float,

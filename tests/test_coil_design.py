@@ -103,8 +103,15 @@ def test_wind_coil_matches_a_direct_hand_calculation():
     mean_radius = bore_radius + 0.5 * radial_thickness
     mean_turn_length = 2.0 * math.pi * mean_radius
     expected_resistance = COPPER_RESISTIVITY_20C_OHM_M * (turns * mean_turn_length) / wire_area
-    # Wheeler's (1928) single-layer air-core solenoid formula
-    expected_inductance = 3.937e-5 * mean_radius**2 * turns**2 / (9.0 * mean_radius + 10.0 * coil_length)
+    # Wheeler's (1928) formulas, blended by radial-build ratio c/a (see
+    # coil_design._solenoid_inductance_h): here c/a = 0.008/0.010 = 0.8 >= 0.2, so the
+    # winding is firmly multi-layer and the blend collapses to the multi-layer form alone.
+    wheeler_si = 1.0e-6 / 0.0254
+    single_layer = wheeler_si * mean_radius**2 * turns**2 / (9.0 * mean_radius + 10.0 * coil_length)
+    multilayer = (0.8 * wheeler_si * mean_radius**2 * turns**2
+                  / (6.0 * mean_radius + 9.0 * coil_length + 10.0 * radial_thickness))
+    blend_weight = min(1.0, (radial_thickness / mean_radius) / 0.2)
+    expected_inductance = (1.0 - blend_weight) * single_layer + blend_weight * multilayer
 
     w = wind_coil(turns, coil_length, radial_thickness, bore_radius, packing_factor=packing)
     assert w.wire_diameter_m == pytest.approx(expected_wire_diameter)
@@ -131,6 +138,71 @@ def test_wheeler_and_long_solenoid_diverge_for_a_short_fat_coil():
     w = wind_coil(turns, coil_length_m=length, radial_thickness_m=1e-6, bore_radius_m=radius)
     long_solenoid = MU_0 * turns**2 * math.pi * w.mean_radius_m**2 / length
     assert w.inductance_h < 0.5 * long_solenoid
+
+
+def _maxwell_inductance_reference(turns, coil_length_m, radial_thickness_m, bore_radius_m,
+                                  packing=0.8):
+    """Independent ground-truth self-inductance from a direct Maxwell mutual-inductance
+    double sum over turns laid out on a grid filling the winding envelope -- the reference
+    the Wheeler blend in coil_design is validated against. Deliberately NOT using any
+    coil_design code, so it's a genuine cross-check, not a tautology."""
+    from scipy.special import ellipk, ellipe
+
+    def mutual(r1, r2, z):
+        k2 = 4.0 * r1 * r2 / ((r1 + r2) ** 2 + z ** 2)
+        K, E = ellipk(k2), ellipe(k2)
+        k = math.sqrt(k2)
+        return MU_0 * math.sqrt(r1 * r2) * ((2.0 / k - k) * K - (2.0 / k) * E)
+
+    def self_turn(r, wire_r):
+        return MU_0 * r * (math.log(8.0 * r / wire_r) - 1.75)
+
+    n_layers = max(1, round(math.sqrt(turns * radial_thickness_m / coil_length_m)))
+    n_per = max(1, round(turns / n_layers))
+    n_actual = n_layers * n_per
+    wire_area = coil_length_m * radial_thickness_m * packing / turns
+    wire_r = math.sqrt(wire_area / math.pi)
+    zs = [(-coil_length_m / 2.0 + coil_length_m * k / max(1, n_per - 1)) for k in range(n_per)] \
+        if n_per > 1 else [0.0]
+    if n_layers > 1:
+        rs = [bore_radius_m + radial_thickness_m * (0.5 + k) / n_layers for k in range(n_layers)]
+    else:
+        rs = [bore_radius_m + radial_thickness_m / 2.0]
+    pos = [(r, z) for r in rs for z in zs]
+    total = 0.0
+    for i, (r1, z1) in enumerate(pos):
+        total += self_turn(r1, wire_r)
+        for j in range(i + 1, len(pos)):
+            r2, z2 = pos[j]
+            total += 2.0 * mutual(r1, r2, z1 - z2)
+    return total * (turns / n_actual) ** 2
+
+
+def test_thick_multilayer_inductance_matches_a_direct_maxwell_sum():
+    """The bug this fixes: the old single-layer-only Wheeler formula ignored radial build
+    and over-estimated a thick multi-layer winding's inductance by tens of percent. The
+    blended formula must instead track an independent Maxwell mutual-inductance sum, and the
+    old single-layer value must be demonstrably wrong for the same coil."""
+    # A thick coil in the optimizer's explored range: radial build ~ mean radius.
+    turns, coil_length, radial_thickness, bore_radius = 400, 0.010, 0.015, 0.0095
+    w = wind_coil(turns, coil_length, radial_thickness, bore_radius)
+    reference = _maxwell_inductance_reference(turns, coil_length, radial_thickness, bore_radius)
+
+    assert w.inductance_h == pytest.approx(reference, rel=0.10)
+
+    mean_radius = bore_radius + 0.5 * radial_thickness
+    old_single_layer = (1.0e-6 / 0.0254) * mean_radius**2 * turns**2 / (9.0 * mean_radius + 10.0 * coil_length)
+    assert old_single_layer > 1.4 * reference   # the old formula was off by >40% here
+
+
+def test_thin_winding_inductance_still_matches_the_single_layer_reference():
+    """Guard the other end of the blend: for a genuinely thin (near single-layer) winding
+    the blend must stay with the single-layer form, which remains the more accurate of the
+    two there, and still track the Maxwell sum."""
+    turns, coil_length, radial_thickness, bore_radius = 100, 0.050, 0.0008, 0.0095
+    w = wind_coil(turns, coil_length, radial_thickness, bore_radius)
+    reference = _maxwell_inductance_reference(turns, coil_length, radial_thickness, bore_radius)
+    assert w.inductance_h == pytest.approx(reference, rel=0.10)
 
 
 def test_copper_resistivity_increases_with_temperature():

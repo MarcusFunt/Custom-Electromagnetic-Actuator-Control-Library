@@ -6,6 +6,7 @@ from emac_sim.linear_plant import (
     GateStation,
     LinearActuatorParams,
     coil_current_step,
+    coil_force_gradient,
     coil_resistance,
     coil_temperature_step,
     default_coil_stations,
@@ -249,6 +250,75 @@ def test_coil_current_step_resistance_override_changes_the_tracking_voltage():
     assert i_cold == pytest.approx(
         coil_current_step(0.0, i_target=target, coil=coil, bus_voltage_v=bus_v, dt=dt,
                           resistance_ohm_override=1.2))
+
+
+def test_coil_force_gradient_equals_the_force_per_amp_coupling():
+    """coil_force_gradient must be dF/di of the coil's actual force law -- the same coupling
+    that both produces the force and (by reciprocity) the back-EMF. For a pure-PM coil this
+    is q_shape(offset, x_c)*k_a, independent of current."""
+    coil = CoilStation(position_m=0.0, x_c=0.02, Cmag=0.0, k_a=0.25)
+    for offset in (-0.015, -0.005, 0.008, 0.02):
+        expected = q_shape(offset, coil.x_c) * coil.k_a
+        for current in (0.0, 2.0, -3.0):
+            assert coil_force_gradient(coil, offset, current) == pytest.approx(expected)
+
+
+def test_coil_force_gradient_matches_a_finite_difference_of_net_force():
+    """The reciprocity claim, checked numerically: dF/di from coil_force_gradient must equal
+    a central finite difference of the actual net_force, for both a pure-PM and a hybrid
+    (reluctance + PM) coil where the reluctance branch makes the coupling current-dependent."""
+    for coil in (CoilStation(position_m=0.0, x_c=0.02, Cmag=0.0, k_a=0.25),
+                 CoilStation(position_m=0.0, x_c=0.02, Cmag=0.40, k_a=0.25, i_sat=6.0)):
+        p = default_params(coils=(coil,), gates=(GateStation(position_m=-0.03),))
+        di = 1e-6
+        for offset in (-0.01, 0.006, 0.015):
+            for current in (0.5, 3.0, 5.0):
+                fd = (net_force(offset, [current + di], p)
+                      - net_force(offset, [current - di], p)) / (2.0 * di)
+                assert coil_force_gradient(coil, offset, current) == pytest.approx(fd, rel=1e-4)
+
+
+def test_coil_force_gradient_finite_differences_a_force_lut():
+    """When a coil carries a force_lut, the coupling comes from differencing the table, so a
+    swept-table coil still gets a physically-consistent back-EMF."""
+    # A simple linear-in-current, linear-in-offset table: F = 3.0 * offset * current.
+    def lut(offset, current):
+        return 3.0 * offset * current
+
+    coil = CoilStation(position_m=0.0, force_lut=lut)
+    for offset in (0.005, 0.01, 0.02):
+        assert coil_force_gradient(coil, offset, 4.0) == pytest.approx(3.0 * offset, rel=1e-3)
+
+
+def test_back_emf_zero_reproduces_the_no_emf_current_step():
+    """The default back_emf_v=0.0 must be a bit-for-bit no-op relative to the prior model."""
+    coil = CoilStation(position_m=0.0, resistance_ohm=1.2, inductance_h=0.004)
+    for target in (1.0, 3.0, 6.0):
+        with_zero = coil_current_step(0.0, target, coil, 12.0, 2e-4, back_emf_v=0.0)
+        default = coil_current_step(0.0, target, coil, 12.0, 2e-4)
+        assert with_zero == pytest.approx(default)
+
+
+def test_back_emf_reduces_the_current_reached_in_one_step():
+    """A positive (opposing) back-EMF means less net voltage drives the coil, so after one
+    rail-limited step the current is strictly lower than with no EMF."""
+    coil = CoilStation(position_m=0.0, resistance_ohm=1.2, inductance_h=0.004)
+    no_emf = coil_current_step(0.0, 6.0, coil, 12.0, 2e-4, back_emf_v=0.0)
+    with_emf = coil_current_step(0.0, 6.0, coil, 12.0, 2e-4, back_emf_v=6.0)
+    assert 0.0 <= with_emf < no_emf
+
+
+def test_back_emf_exceeding_the_bus_cannot_sustain_current_on_a_unipolar_driver():
+    """When the motional back-EMF exceeds what the bus can supply, a single half-bridge
+    can't hold the current up -- it decays toward zero (the freewheeling diode blocks
+    reverse current), never going negative. This is the physical loading that was previously
+    unmodeled: a fast slug's own back-EMF starving its driver."""
+    coil = CoilStation(position_m=0.0, resistance_ohm=1.2, inductance_h=0.004)
+    i = 4.0
+    for _ in range(2000):
+        i = coil_current_step(i, 6.0, coil, bus_voltage_v=12.0, dt=1e-4, back_emf_v=30.0)
+        assert i >= 0.0
+    assert i == pytest.approx(0.0, abs=1e-3)
 
 
 def test_coil_resistance_matches_plant_formula_and_rises_with_temperature():

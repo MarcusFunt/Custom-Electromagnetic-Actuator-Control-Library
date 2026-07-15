@@ -212,9 +212,36 @@ def step(x: float, v: float, currents: Sequence[float], dt: float, p: LinearActu
 
 
 
+def coil_force_gradient(coil: CoilStation, offset: float, current: float) -> float:
+    """dF/di for one coil at a given slug offset and operating current -- the coil's local
+    electromechanical coupling. By Maxwell reciprocity of the magnetic coenergy W'(x, i)
+    (F = dW'/dx, flux linkage lambda = dW'/di, so d(lambda)/dx == dF/di), this SAME quantity
+    is both the force per amp AND the motional back-EMF per unit slug velocity:
+    e_bemf = (dF/di) * v_slug. linear_sim.run() uses it for the latter (see coil_current_step's
+    back_emf_v). It is evaluated against the coil's ACTUAL force law: a central finite
+    difference on force_lut when one is set (correct for any swept-table shape, including a
+    nonlinear FEMM reluctance table), otherwise the closed-form derivative of
+    q_shape*(f_current + f_current_pm). For the default pure-PM slug this reduces to
+    q_shape(offset, x_c) * k_a (the PM branch is linear in i, so its coupling is
+    current-independent); the reluctance branch's i-dependent derivative is included for the
+    hybrid case."""
+    if coil.force_lut is not None:
+        di = 1e-3
+        return (coil.force_lut(offset, current + di) - coil.force_lut(offset, current - di)) / (2.0 * di)
+    q = q_shape(offset, coil.x_c)
+    if current > 0.0 and coil.Cmag > 0.0:
+        # d/di of f_current = Cmag*i^2/(1+(i/i_sat)^2) (attract-only, zero for i<=0)
+        denom = 1.0 + (current / coil.i_sat) ** 2
+        d_reluctance = 2.0 * coil.Cmag * current / (denom * denom)
+    else:
+        d_reluctance = 0.0
+    return q * (d_reluctance + coil.k_a)
+
+
 def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
                        bus_voltage_v: float, dt: float, bipolar: bool = False,
-                       resistance_ohm_override: float | None = None) -> float:
+                       resistance_ohm_override: float | None = None,
+                       back_emf_v: float = 0.0) -> float:
     """Advance one coil's ACTUAL current toward i_target over one control tick, through
     its own RL circuit rather than snapping to the target instantly. Modeled as an
     idealized current-mode PWM controller: solve for the exact CONSTANT voltage that would
@@ -242,6 +269,20 @@ def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
     to take effect under "rl" (under "ideal", with no hardware model at all, repel already
     works regardless of this flag).
 
+    back_emf_v is the motional back-EMF (volts) opposing this coil's current as the magnet
+    slug moves past it: e = coil_force_gradient(coil, offset, i) * v_slug, the same
+    electromechanical coupling that produces the force (reciprocity), supplied by the caller
+    (linear_sim.run) which knows the slug's position and velocity. The coil circuit is
+    L di/dt = (v_driver - e) - i*R, so the EMF both raises the driver voltage needed to hit
+    a target and, once it exceeds what the rail can supply, prevents the target from being
+    reached at all -- exactly the physical loading a fast-moving slug puts on its own driver,
+    which was previously unmodeled (current tracked the commanded profile regardless of how
+    fast the slug was moving, silently overstating thrust and violating energy conservation).
+    For a single half-bridge (bipolar=False) the freewheeling diode blocks reverse current,
+    so the result is floored at zero: a back-EMF larger than the bus decays the current to
+    zero rather than driving it negative. back_emf_v=0.0 (the default) exactly reproduces the
+    prior no-EMF behavior, so every direct caller and unit test is unaffected.
+
     resistance_ohm_override, if given, is used instead of coil.resistance_ohm for BOTH
     the voltage solve and the rl_current_step update -- the hook LinearActuatorParams.
     thermal_model uses to feed each coil's temperature-adjusted resistance (see
@@ -252,10 +293,19 @@ def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
     l = coil.inductance_h
     tau = l / r
     decay = math.exp(-dt / tau)
-    v_needed = r * (i_target - i_actual * decay) / (1.0 - decay) if decay < 1.0 else 0.0
+    # Deadbeat voltage solve, now against the back-EMF: the net series voltage driving the
+    # RL circuit is (v_driver - back_emf_v), so reaching i_target needs a driver voltage of
+    # back_emf_v + r*(i_target - i_actual*decay)/(1 - decay).
+    if decay < 1.0:
+        v_needed = back_emf_v + r * (i_target - i_actual * decay) / (1.0 - decay)
+    else:
+        v_needed = back_emf_v
     v_min = -bus_voltage_v if bipolar else 0.0
     v_applied = max(v_min, min(bus_voltage_v, v_needed))
-    return rl_current_step(i_actual, v_applied, r, l, dt)
+    i_new = rl_current_step(i_actual, v_applied - back_emf_v, r, l, dt)
+    if not bipolar:
+        i_new = max(0.0, i_new)   # single half-bridge: diode blocks reverse current
+    return i_new
 
 
 

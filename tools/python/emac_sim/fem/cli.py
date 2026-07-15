@@ -93,7 +93,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
                               "'femm': real axisymmetric FEM solve, needs FEMM installed.")
     parser.add_argument("--coil", type=int, action="append", dest="coils",
                          help="coil index to sweep (repeatable); default: every coil")
-    parser.add_argument("--n-offsets", type=int, default=31, help="grid points along position")
+    parser.add_argument("--n-offsets", type=int, default=41, help="grid points along position")
     parser.add_argument("--n-currents", type=int, default=11, help="grid points along current")
     parser.add_argument("--max-current-a", type=float, default=None,
                          help="sweep currents over +/- this value (default: 6.0 A)")

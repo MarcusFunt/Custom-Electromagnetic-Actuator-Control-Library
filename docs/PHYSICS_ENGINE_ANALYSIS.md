@@ -111,10 +111,14 @@ interpolation.
 1. **Fitted force-map tables.** Replace `q_shape()` with a calibrated table supporting
    interpolation and optional derivative lookup.  Start with a static `q(theta)`/`q(x)` table
    per coil, then add current-dependent saturation if measured data requires it.
-2. **Coupled electrical/mechanical back-EMF.** For a moving permanent-magnet slug, the coil
-   voltage equation should eventually include speed-dependent induced voltage.  The current
-   state already exists in `linear_sim.py`, so this can be added without changing the
-   high-level supervisor API.
+2. **Coupled electrical/mechanical back-EMF -- implemented for the linear stepper.** The
+   `"rl"` coil-voltage equation now includes the speed-dependent induced voltage
+   e = (dF/di)*v_slug (`linear_plant.coil_force_gradient`), the exact reciprocal of the
+   force the current produces, so mechanical work is drawn from the electrical source
+   instead of appearing from nothing (energy conservation verified to ~1e-9). This corrects
+   a large overstatement of thrust for voltage-marginal designs (the earlier model let
+   current track the commanded profile regardless of slug speed). Still to do: mutual
+   inductance between adjacent coils, and eddy-current damping in the slug/tube.
 3. **Adaptive or event-aligned substepping.** For offline reference runs, optionally cut a
    mechanical step exactly at predicted sensor events and pulse boundary times.  That would
    reduce small timing errors in controller/plant interaction without changing firmware-like

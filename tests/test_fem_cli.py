@@ -14,7 +14,7 @@ def test_arg_parser_defaults():
     assert args.backend == "reference"
     assert args.outdir == "build/fem_lut"
     assert args.coils is None
-    assert args.n_offsets == 31
+    assert args.n_offsets == 41
     assert args.n_currents == 11
 
 

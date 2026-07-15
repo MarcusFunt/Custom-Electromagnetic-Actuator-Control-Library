@@ -33,7 +33,7 @@ copper_area = coil_length * radial_thickness * packing_factor
 wire_area   = copper_area / turns              -> wire_diameter = sqrt(4*wire_area/pi)
 mean_radius = bore_radius + radial_thickness/2
 resistance  = copper_resistivity_ohm_m(temperature_c) * (turns * 2*pi*mean_radius) / wire_area
-inductance  = 3.937e-5 * mean_radius^2 * turns^2 / (9*mean_radius + 10*coil_length)   (Wheeler, 1928)
+inductance  = blend of Wheeler's single-layer and multi-layer (1928) formulas   (see below)
 ```
 
 Both R and L scale roughly with `turns^2` for a fixed envelope (wire length grows with
@@ -41,12 +41,16 @@ turns, wire area shrinks with turns, and resistance is length/area) -- confirmed
 numerically in `tests/test_coil_design.py` (doubling turns more than triples both).
 Resistivity is temperature-dependent (`copper_resistivity_ohm_m`, linear about the 20 C
 reference, ~0.39%/C -- `docs/DESIGN.md` flags this as "mandatory, not optional" for a real
-build); `wind_coil(..., temperature_c=...)` defaults to 20 C. Inductance uses Wheeler's
-single-layer air-core solenoid formula rather than the simpler long-solenoid one (`L =
-mu_0*N^2*A/length`) -- the two agree within ~0.3% once the coil is much longer than its
-radius, but diverge sharply for short/fat coils (Wheeler gives roughly half, or less, of
-what the long-solenoid formula would overestimate) -- exactly the regime `coil_length_m`'s
-default bounds (5-80mm) let the search land in.
+build); `wind_coil(..., temperature_c=...)` defaults to 20 C. Inductance blends Wheeler's
+single-layer (`~a^2 N^2/(9a+10b)`) and multi-layer (`0.8 a^2 N^2/(6a+9b+10c)`, with
+`a`=mean radius, `b`=length, `c`=radial build) air-core formulas by the radial-build ratio
+`c/a` (`coil_design._solenoid_inductance_h`). The single-layer form alone -- what this model
+used previously -- ignores `c` entirely and OVER-estimates a thick multi-layer winding by
+30-75% (the optimizer explores `radial_thickness_m` up to 40mm on a ~10mm-radius coil, well
+into that regime); the blend tracks a direct Maxwell mutual-inductance sum to within ~4%
+across thin/thick and short/long geometries (`tests/test_coil_design.py`). Getting `L` right
+matters because it sets each coil's `L/R` time constant, which governs how fast the `"rl"`
+current loop can build current during a pump window.
 
 **Self-heating now feeds back into every candidate the search evaluates.**
 `build_params` sets `LinearActuatorParams.thermal_model=True`: each coil's temperature
