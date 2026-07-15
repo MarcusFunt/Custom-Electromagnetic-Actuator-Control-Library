@@ -6,133 +6,193 @@
 <title>EMAC control lab</title>
 <style>
 :root{
-  --bg:#f7f8fa; --panel:#fff; --panel2:#f1f3f6; --ink:#1c2530; --mut:#667085; --line:#e4e7ec;
-  --accent:#4C72B0; --blue:#4C72B0; --orange:#DD8452; --green:#55A868; --red:#C44E52; --purple:#8172B3;
-  --ok:#2f9e5f; --bad:#C44E52; --consolebg:#0e1116; --consoleink:#d6dde6;
+  --bg:#f5f7fb; --panel:#ffffff; --panel2:#eef1f7; --ink:#1a2432; --mut:#64748b; --line:#e2e8f0;
+  --accent:#4C72B0; --accent2:#6f8fd6; --blue:#4C72B0; --orange:#DD8452; --green:#55A868; --red:#C44E52;
+  --purple:#8172B3; --teal:#4c9aa0; --consolebg:#0d1220; --consoleink:#cfe0ff; --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.05);
+  --shadow2:0 4px 14px rgba(16,24,40,.10);
 }
 @media (prefers-color-scheme:dark){:root{
-  --bg:#0f1216; --panel:#171b21; --panel2:#1e242c; --ink:#e6eaf0; --mut:#94a0b0; --line:#2b313c;
-  --consolebg:#0a0d11; --consoleink:#cfd7e0;
+  --bg:#0c0f16; --panel:#151a23; --panel2:#1b212c; --ink:#e8edf5; --mut:#8b98ab; --line:#28303c;
+  --consolebg:#080b12; --consoleink:#cfe0ff; --shadow:0 1px 2px rgba(0,0,0,.4); --shadow2:0 6px 20px rgba(0,0,0,.5);
 }}
-:root[data-theme="light"]{--bg:#f7f8fa;--panel:#fff;--panel2:#f1f3f6;--ink:#1c2530;--mut:#667085;--line:#e4e7ec;--consolebg:#0e1116;--consoleink:#d6dde6;}
-:root[data-theme="dark"]{--bg:#0f1216;--panel:#171b21;--panel2:#1e242c;--ink:#e6eaf0;--mut:#94a0b0;--line:#2b313c;--consolebg:#0a0d11;--consoleink:#cfd7e0;}
+:root[data-theme="light"]{--bg:#f5f7fb;--panel:#fff;--panel2:#eef1f7;--ink:#1a2432;--mut:#64748b;--line:#e2e8f0;--consolebg:#0d1220;--consoleink:#cfe0ff;--shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.05);--shadow2:0 4px 14px rgba(16,24,40,.10);}
+:root[data-theme="dark"]{--bg:#0c0f16;--panel:#151a23;--panel2:#1b212c;--ink:#e8edf5;--mut:#8b98ab;--line:#28303c;--consolebg:#080b12;--consoleink:#cfe0ff;--shadow:0 1px 2px rgba(0,0,0,.4);--shadow2:0 6px 20px rgba(0,0,0,.5);}
 *{box-sizing:border-box}
-body{margin:0;font:13.5px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
-header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
-header h1{margin:0;font-size:15px;letter-spacing:.01em}
-header .sub{color:var(--mut);font-size:11.5px}
-.badge{font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid var(--line);color:var(--mut)}
-.badge.on{background:rgba(85,168,104,.16);border-color:var(--green);color:var(--green)}
-.badge.off{background:rgba(196,78,82,.12);border-color:var(--red);color:var(--red)}
+html,body{height:100%}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);
+  -webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);
+  background:var(--panel);position:sticky;top:0;z-index:20;box-shadow:var(--shadow)}
+.brand{display:flex;align-items:center;gap:11px;cursor:pointer}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:grid;place-items:center;color:#fff;font-size:16px;box-shadow:var(--shadow)}
+.brand h1{margin:0;font-size:15px;font-weight:700;letter-spacing:.01em}
+.brand .tag{font-size:11px;color:var(--mut);margin-top:-2px}
 .spacer{flex:1}
-.themebtn{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--mut);border-radius:7px;padding:4px 9px;font-size:12px}
-.layout{display:flex;min-height:calc(100vh - 51px)}
-nav{flex:0 0 190px;border-right:1px solid var(--line);background:var(--panel);padding:12px 10px}
-nav button{display:flex;gap:9px;align-items:center;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);
-  padding:9px 11px;border-radius:8px;cursor:pointer;font:inherit;margin-bottom:3px}
+.badge{font-size:11.5px;padding:3px 10px;border-radius:20px;border:1px solid var(--line);color:var(--mut);background:var(--panel2);white-space:nowrap}
+.badge.on{background:rgba(85,168,104,.14);border-color:rgba(85,168,104,.5);color:var(--green)}
+.badge.off{background:rgba(196,78,82,.12);border-color:rgba(196,78,82,.5);color:var(--red)}
+.iconbtn{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--mut);border-radius:9px;
+  padding:6px 11px;font-size:13px;transition:.15s}
+.iconbtn:hover{color:var(--ink);border-color:var(--accent)}
+.layout{display:flex;min-height:calc(100vh - 55px)}
+nav{flex:0 0 210px;border-right:1px solid var(--line);background:var(--panel);padding:14px 12px}
+nav .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);margin:16px 8px 7px;font-weight:600}
+nav .grp:first-child{margin-top:2px}
+nav button{display:flex;gap:11px;align-items:center;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);
+  padding:10px 12px;border-radius:10px;cursor:pointer;font:inherit;font-weight:500;margin-bottom:2px;transition:.13s}
 nav button:hover{background:var(--panel2)}
-nav button.on{background:var(--accent);color:#fff}
-nav .ic{font-size:15px;width:18px;text-align:center}
-nav .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:14px 6px 6px}
-main{flex:1;min-width:0;padding:18px 22px;max-width:1180px}
-h2.view{margin:0 0 3px;font-size:17px}
-p.lede{margin:0 0 16px;color:var(--mut);font-size:12.5px;max-width:70ch}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:16px}
-.card h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
-.row{display:flex;gap:16px;flex-wrap:wrap}
-.col{flex:1;min-width:280px}
-label.f{display:block;margin-bottom:11px}
-label.f > span{display:block;font-size:11.5px;color:var(--mut);margin-bottom:4px}
-label.f .hint{color:var(--mut);font-weight:400;font-size:10.5px}
-input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink)}
+nav button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:var(--shadow)}
+nav .ic{font-size:16px;width:20px;text-align:center}
+main{flex:1;min-width:0;padding:24px 30px;max-width:1220px}
+.view-head{margin-bottom:20px}
+h2.view{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
+p.lede{margin:5px 0 0;color:var(--mut);font-size:13.5px;max-width:72ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:var(--shadow)}
+.card > h3{margin:0 0 14px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:700}
+.row{display:flex;gap:18px;flex-wrap:wrap}
+.col{flex:1;min-width:290px}
+label.f{display:block;margin-bottom:13px}
+label.f > span{display:block;font-size:12px;color:var(--mut);margin-bottom:5px;font-weight:500}
+label.f .hint{color:var(--mut);font-weight:400;font-size:11px}
+input,select{font:inherit;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);
+  color:var(--ink);transition:.13s}
+input:focus,select:focus{outline:none;border-color:var(--accent);background:var(--panel)}
 input[type=checkbox]{width:auto}
-.inline{display:flex;align-items:center;gap:8px}
-button.act{font:inherit;font-weight:600;padding:8px 15px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
-button.act:hover{filter:brightness(1.07)}
-button.act.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-weight:500}
+.inline{display:flex;align-items:center;gap:9px}
+button.act{font:inherit;font-weight:600;padding:9px 17px;border:0;border-radius:10px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;cursor:pointer;transition:.15s;box-shadow:var(--shadow)}
+button.act:hover{filter:brightness(1.06);box-shadow:var(--shadow2)}
+button.act.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-weight:500;box-shadow:none}
+button.act.sec:hover{border-color:var(--accent);filter:none}
 button.act.warn{background:var(--red)}
-button.act:disabled{opacity:.5;cursor:not-allowed}
-.btnrow{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
-.console{background:var(--consolebg);color:var(--consoleink);border-radius:9px;padding:12px 13px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;
-  white-space:pre-wrap;word-break:break-word;height:340px;overflow:auto;border:1px solid var(--line)}
-.statuspill{font-size:11px;padding:2px 9px;border-radius:12px;border:1px solid var(--line);color:var(--mut)}
-.statuspill.running{color:var(--blue);border-color:var(--blue)}
-.statuspill.done{color:var(--green);border-color:var(--green)}
-.statuspill.failed,.statuspill.stopped{color:var(--red);border-color:var(--red)}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-.tile{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
-.tile .v{font-size:21px;font-weight:700}.tile .l{color:var(--mut);font-size:11px;margin-top:2px}
+button.act.ghost{background:transparent;color:var(--accent);box-shadow:none;padding:9px 12px}
+button.act:disabled{opacity:.45;cursor:not-allowed;filter:none;box-shadow:none}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:4px}
+.console{background:var(--consolebg);color:var(--consoleink);border-radius:11px;padding:14px 15px;
+  font:12.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;
+  height:330px;overflow:auto;border:1px solid var(--line)}
+.console:empty::before{content:"output will appear here…";color:#5b6b86}
+.statuspill{font-size:11.5px;padding:3px 11px;border-radius:12px;border:1px solid var(--line);color:var(--mut);font-weight:500}
+.statuspill.running{color:var(--blue);border-color:var(--blue);background:rgba(76,114,176,.1)}
+.statuspill.done{color:var(--green);border-color:var(--green);background:rgba(85,168,104,.1)}
+.statuspill.failed,.statuspill.stopped{color:var(--red);border-color:var(--red);background:rgba(196,78,82,.1)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.tile .v{font-size:23px;font-weight:700;letter-spacing:-.01em}.tile .l{color:var(--mut);font-size:11.5px;margin-top:3px}
+.tile .v small{font-size:13px;font-weight:600;color:var(--mut)}
 .muted{color:var(--mut)}
-.chips{display:flex;gap:6px;flex-wrap:wrap}
-.chip{font-size:11.5px;padding:4px 11px;border:1px solid var(--line);border-radius:20px;cursor:pointer;background:var(--panel2);color:var(--mut)}
-.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-table{border-collapse:collapse;width:100%;font-size:12px}
-th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+.small{font-size:12px}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{font-size:12px;padding:6px 13px;border:1px solid var(--line);border-radius:20px;cursor:pointer;background:var(--panel2);
+  color:var(--mut);transition:.13s;font-weight:500}
+.chip:hover{border-color:var(--accent);color:var(--ink)}
+.chip.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
 th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+tr.clickable{cursor:pointer;transition:.1s}
+tr.clickable:hover{background:var(--panel2)}
+tr.sel{background:rgba(76,114,176,.1)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
 .dot.ok{background:var(--green)}.dot.bad{background:var(--red)}.dot.skip{background:var(--mut);opacity:.5}
 svg text{fill:var(--mut);font-size:10px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;margin-top:6px}
-.legend span{display:inline-flex;align-items:center;gap:5px;color:var(--mut)}
-.legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
-.err{color:var(--red);font-size:12px;margin-top:8px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px;color:var(--mut)}
+.legend i{width:16px;height:3px;border-radius:2px;display:inline-block}
+.legend i.dash{background:none!important;border-top:2px dashed var(--mut);height:0}
+.err{color:var(--red);font-size:12.5px;margin-top:10px}
 .hidden{display:none}
-select.lut{max-width:100%}
-.small{font-size:11.5px}
+/* Home */
+.hero{background:linear-gradient(135deg,rgba(76,114,176,.12),rgba(111,143,214,.06));border:1px solid var(--line);
+  border-radius:16px;padding:26px 28px;margin-bottom:20px}
+.hero h2{margin:0 0 6px;font-size:24px;font-weight:800;letter-spacing:-.02em}
+.hero p{margin:0;color:var(--mut);max-width:62ch;font-size:14px}
+.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-bottom:20px}
+.action{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;
+  transition:.16s;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.action:hover{transform:translateY(-2px);box-shadow:var(--shadow2);border-color:var(--accent)}
+.action .aic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-size:20px;
+  background:var(--panel2)}
+.action h4{margin:0;font-size:15px;font-weight:700}
+.action p{margin:0;color:var(--mut);font-size:12.5px;line-height:1.45}
+.statusgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.metatable td:first-child{color:var(--mut);white-space:nowrap;width:1%;padding-right:18px}
+.section-sub{font-size:13px;font-weight:700;margin:2px 0 10px;color:var(--ink)}
+.empty{text-align:center;padding:34px 18px;color:var(--mut)}
+.empty .big{font-size:30px;margin-bottom:8px;opacity:.7}
+.pillbtn{font-size:11.5px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;color:var(--mut)}
+.pillbtn.on{background:var(--accent);color:#fff;border-color:transparent}
 </style>
 </head>
 <body>
 <header>
-  <h1>EMAC control lab</h1>
-  <span class="sub" id="cwd"></span>
+  <div class="brand" id="brandHome">
+    <div class="logo">⚡</div>
+    <div><h1>EMAC control lab</h1><div class="tag" id="cwd"></div></div>
+  </div>
   <span class="spacer"></span>
   <span class="badge" id="femmBadge">FEMM …</span>
-  <button class="themebtn" id="themeBtn">◐ theme</button>
+  <button class="iconbtn" id="themeBtn">◐ Theme</button>
 </header>
 
 <div class="layout">
   <nav>
+    <div class="grp">Overview</div>
+    <button data-view="home" class="on"><span class="ic">🏠</span> Home</button>
     <div class="grp">Do</div>
-    <button data-view="run" class="on"><span class="ic">▶</span> Run a tool</button>
+    <button data-view="run"><span class="ic">▶️</span> Run a tool</button>
     <button data-view="sweep"><span class="ic">📈</span> Sweep &amp; estimate</button>
-    <div class="grp">See</div>
-    <button data-view="visualize"><span class="ic">🔬</span> Visualize LUTs</button>
+    <div class="grp">Analyze</div>
+    <button data-view="analyze"><span class="ic">🔬</span> Force tables</button>
     <button data-view="optimizer"><span class="ic">🏁</span> Optimizer run</button>
   </nav>
 
   <main>
+    <!-- HOME -->
+    <section id="view-home">
+      <div class="hero">
+        <h2>Design, sweep, and analyze — in one place.</h2>
+        <p>Run the EMAC tools, launch and time FEM force-table sweeps, and dig into the
+          coupling physics they produce. Everything below is wired to the real library,
+          running locally on your machine.</p>
+      </div>
+      <div class="actions" id="homeActions"></div>
+      <div class="card">
+        <h3>Workspace</h3>
+        <div class="statusgrid" id="homeStatus"></div>
+      </div>
+    </section>
+
     <!-- RUN -->
-    <section id="view-run">
-      <h2 class="view">Run a tool</h2>
-      <p class="lede">Pick a command, set its options, and run it. Output streams live below —
-        the same as running it in a terminal, but with the results wired into this app.</p>
+    <section id="view-run" class="hidden">
+      <div class="view-head"><h2 class="view">Run a tool</h2>
+        <p class="lede">Pick a command, set its options, and run it. Output streams live below —
+          the same as a terminal, with the results wired into this app.</p></div>
       <div class="card">
         <div class="row">
           <div class="col">
-            <label class="f"><span>Command</span>
-              <select id="cmdSel"></select></label>
+            <label class="f"><span>Command</span><select id="cmdSel"></select></label>
             <p class="muted small" id="cmdHelp"></p>
           </div>
           <div class="col" id="cmdArgs"></div>
         </div>
-        <div class="btnrow" style="margin-top:6px">
-          <button class="act" id="runBtn">Run</button>
+        <div class="btnrow">
+          <button class="act" id="runBtn">▶ Run</button>
           <button class="act warn hidden" id="stopBtn">Stop</button>
           <span class="statuspill" id="runStatus">idle</span>
           <span class="muted small" id="runElapsed"></span>
         </div>
       </div>
-      <div class="card">
-        <h3>Output</h3>
-        <div class="console" id="runConsole"></div>
-      </div>
+      <div class="card"><h3>Output</h3><div class="console" id="runConsole"></div></div>
     </section>
 
     <!-- SWEEP -->
     <section id="view-sweep" class="hidden">
-      <h2 class="view">Sweep &amp; estimate</h2>
-      <p class="lede">Configure a FEM force-table sweep — how big and how detailed — get a
-        wall-clock estimate before you commit, then start it and watch progress.</p>
+      <div class="view-head"><h2 class="view">Sweep &amp; estimate</h2>
+        <p class="lede">Configure a FEM force-table sweep — how big and how detailed — get a
+          wall-clock estimate before you commit, then start it and watch progress.</p></div>
       <div class="card">
         <div class="row">
           <div class="col">
@@ -142,22 +202,20 @@ select.lut{max-width:100%}
                 <option value="reference">reference — analytic, fast, no FEMM</option>
                 <option value="femm">femm — real field solve (slow, accurate)</option>
               </select></label>
-            <label class="f"><span>Output directory</span>
-              <input id="swOutdir" value="build/gui/fem_lut"></label>
+            <label class="f"><span>Output directory</span><input id="swOutdir" value="build/gui/fem_lut"></label>
           </div>
           <div class="col">
             <label class="f"><span>Sweep size &amp; detail</span></label>
-            <div class="chips" id="swPreset" style="margin-bottom:12px">
+            <div class="chips" id="swPreset" style="margin-bottom:14px">
               <span class="chip" data-off="21" data-cur="7">Coarse</span>
               <span class="chip on" data-off="41" data-cur="11">Medium</span>
               <span class="chip" data-off="81" data-cur="15">Fine</span>
               <span class="chip" data-off="121" data-cur="21">Very fine</span>
             </div>
             <div class="row">
-              <label class="f" style="flex:1"><span>Offset points <span class="hint">(detail along position)</span></span>
+              <label class="f" style="flex:1"><span>Offset points <span class="hint">(along position)</span></span>
                 <input id="swOffsets" type="number" value="41" min="3"></label>
-              <label class="f" style="flex:1"><span>Current points</span>
-                <input id="swCurrents" type="number" value="11" min="2"></label>
+              <label class="f" style="flex:1"><span>Current points</span><input id="swCurrents" type="number" value="11" min="2"></label>
             </div>
             <div class="row">
               <label class="f" style="flex:1"><span>Geometry cells <span class="hint">(for a study)</span></span>
@@ -168,282 +226,313 @@ select.lut{max-width:100%}
           </div>
         </div>
         <div class="btnrow">
-          <button class="act sec" id="estBtn">Estimate time</button>
-          <button class="act" id="sweepBtn">Start sweep</button>
+          <button class="act sec" id="estBtn">⏱ Estimate time</button>
+          <button class="act" id="sweepBtn">▶ Start sweep</button>
           <button class="act warn hidden" id="sweepStopBtn">Stop</button>
-          <button class="act sec hidden" id="qcBtn">QC results</button>
           <span class="statuspill" id="sweepStatus">idle</span>
         </div>
-        <div id="estOut" class="hidden" style="margin-top:14px">
+        <div id="estOut" class="hidden" style="margin-top:16px">
           <div class="tiles">
             <div class="tile"><div class="v" id="estSolves">–</div><div class="l">solves</div></div>
             <div class="tile"><div class="v" id="estPer">–</div><div class="l">sec / solve</div></div>
             <div class="tile"><div class="v" id="estTime">–</div><div class="l">estimated total</div></div>
           </div>
-          <p class="muted small" id="estNote" style="margin:8px 2px 0"></p>
+          <p class="muted small" id="estNote" style="margin:9px 2px 0"></p>
         </div>
         <div class="err hidden" id="estErr"></div>
       </div>
-      <div class="card">
-        <h3>Output</h3>
-        <div class="console" id="sweepConsole"></div>
+      <div class="card"><h3>Output</h3><div class="console" id="sweepConsole"></div>
+        <div class="btnrow hidden" id="sweepDone" style="margin-top:12px">
+          <button class="act sec" id="qcBtn">Quality-check output</button>
+          <button class="act ghost" id="toAnalyze">Analyze results →</button>
+        </div>
       </div>
     </section>
 
-    <!-- VISUALIZE -->
-    <section id="view-visualize" class="hidden">
-      <h2 class="view">Visualize force LUTs</h2>
-      <p class="lede">Load the force tables a sweep produced and inspect the coupling curves,
-        plus an automatic physical-sanity verdict for each table.</p>
+    <!-- ANALYZE -->
+    <section id="view-analyze" class="hidden">
+      <div class="view-head"><h2 class="view">Force-table analysis</h2>
+        <p class="lede">Load the force tables a sweep produced. Triage the whole batch at a
+          glance, then drill into any table's coupling physics, quality checks, and how it
+          compares to the fast analytic model.</p></div>
       <div class="card">
-        <div class="btnrow">
-          <label class="f" style="flex:1;margin:0"><span>LUT directory</span>
-            <input id="lutDir" value="build/gui/fem_lut"></label>
+        <div class="btnrow" style="margin-top:0">
+          <label class="f" style="flex:1;margin:0"><span>LUT directory</span><input id="lutDir" value="build/gui/fem_lut"></label>
           <button class="act sec" id="lutLoadBtn" style="align-self:flex-end">Load</button>
         </div>
-        <div style="margin-top:12px" class="inline">
-          <select id="lutSel" class="lut" style="max-width:520px"></select>
-          <span class="muted small" id="lutCount"></span>
-        </div>
       </div>
-      <div class="card hidden" id="lutCard">
-        <h3>Force vs. slug offset</h3>
-        <div id="lutChart"></div>
-        <div class="legend" id="lutLegend"></div>
-        <div style="margin-top:16px">
-          <h3>Quality control <span id="qcVerdict"></span></h3>
-          <table id="qcTable"></table>
-        </div>
+      <div class="card hidden" id="batchCard">
+        <h3>Batch quality control <span id="batchSummary" class="muted small" style="text-transform:none;letter-spacing:0"></span></h3>
+        <div style="overflow:auto"><table id="batchTable"></table></div>
+      </div>
+      <div id="analyzeBody"></div>
+      <div class="empty hidden" id="analyzeEmpty">
+        <div class="big">🔬</div>
+        <div>No force tables here yet.</div>
+        <div class="small" style="margin-top:6px">Run a sweep first, then load its output directory.</div>
+        <div style="margin-top:14px"><button class="act ghost" id="emptyToSweep">Go to Sweep &amp; estimate →</button></div>
       </div>
     </section>
 
     <!-- OPTIMIZER -->
     <section id="view-optimizer" class="hidden">
-      <h2 class="view">Optimizer run</h2>
-      <p class="lede">Live snapshot of a design search (written to
-        <code>build/optimize_results/latest.json</code> by an optimizer run). Reload to update.</p>
+      <div class="view-head"><h2 class="view">Optimizer run</h2>
+        <p class="lede">Live snapshot of a design search (written to
+          <code>build/optimize_results/latest.json</code> by an optimizer run).</p></div>
       <div class="card">
-        <div class="btnrow"><button class="act sec" id="optReload">Reload snapshot</button>
+        <div class="btnrow" style="margin-top:0"><button class="act sec" id="optReload">↻ Reload snapshot</button>
           <span class="muted small" id="optWhen"></span></div>
-        <div id="optBody" style="margin-top:14px"><p class="muted">No snapshot found yet.</p></div>
+        <div id="optBody" style="margin-top:16px"><p class="muted">No snapshot found yet.</p></div>
       </div>
     </section>
   </main>
 </div>
 
 <script>
-const SERIES_COLORS = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3","#937860"];
+const SERIES_COLORS = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3","#4c9aa0"];
 let STATE = null;
 
 const $ = s => document.querySelector(s);
-const el = (t, a={}, kids=[]) => { const e=document.createElement(t);
+const el = (t,a={},kids=[])=>{const e=document.createElement(t);
   for(const k in a){ if(k==="class")e.className=a[k]; else if(k==="html")e.innerHTML=a[k]; else e.setAttribute(k,a[k]); }
-  (Array.isArray(kids)?kids:[kids]).forEach(c=>e.appendChild(typeof c==="string"?document.createTextNode(c):c)); return e; };
-async function api(path, opts){ const r=await fetch(path,opts); const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||("HTTP "+r.status)); return j; }
-function fmtTime(s){ if(s<90) return s.toFixed(1)+" s"; if(s<5400) return (s/60).toFixed(1)+" min"; return (s/3600).toFixed(2)+" h"; }
+  (Array.isArray(kids)?kids:[kids]).forEach(c=>e.appendChild(typeof c==="string"?document.createTextNode(c):c)); return e;};
+async function api(path,opts){const r=await fetch(path,opts);const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||("HTTP "+r.status));return j;}
+function fmtTime(s){if(s<90)return s.toFixed(1)+" s";if(s<5400)return (s/60).toFixed(1)+" min";return (s/3600).toFixed(2)+" h";}
+function fmtNum(v,d=3){return (Math.abs(v)>=1000||Math.abs(v)<0.001&&v!==0)?(+v).toExponential(2):(+v).toFixed(d);}
 
-// ---- theme ----
-$("#themeBtn").onclick = () => {
-  const cur = document.documentElement.getAttribute("data-theme");
-  const next = cur==="dark" ? "light" : cur==="light" ? "dark" : (matchMedia("(prefers-color-scheme:dark)").matches?"light":"dark");
-  document.documentElement.setAttribute("data-theme", next);
-};
+$("#themeBtn").onclick=()=>{const cur=document.documentElement.getAttribute("data-theme");
+  const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme:dark)").matches?"light":"dark");
+  document.documentElement.setAttribute("data-theme",next);};
 
-// ---- nav ----
-document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));
-  b.classList.add("on");
-  ["run","sweep","visualize","optimizer"].forEach(v=>$("#view-"+v).classList.toggle("hidden", v!==b.dataset.view));
-  if(b.dataset.view==="optimizer") loadOptimizer();
-});
+function go(view){
+  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.view===view));
+  ["home","run","sweep","analyze","optimizer"].forEach(v=>$("#view-"+v).classList.toggle("hidden",v!==view));
+  if(view==="optimizer")loadOptimizer();
+  if(view==="home")renderHome();
+}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>go(b.dataset.view));
+$("#brandHome").onclick=()=>go("home");
 
 // ---- shared job console ----
-async function streamJob(jobId, consoleEl, statusEl, onDone, elapsedEl){
-  let since=0;
-  consoleEl.textContent="";
-  const tick = async () => {
-    let snap;
-    try { snap = await api(`/api/job?id=${jobId}&since=${since}`); }
-    catch(e){ statusEl.textContent="error"; return; }
-    if(snap.lines.length){ consoleEl.textContent += snap.lines.join("\n")+"\n"; consoleEl.scrollTop=consoleEl.scrollHeight; since=snap.next; }
+async function streamJob(jobId,consoleEl,statusEl,onDone,elapsedEl){
+  let since=0; consoleEl.textContent="";
+  const tick=async()=>{let snap;
+    try{snap=await api(`/api/job?id=${jobId}&since=${since}`);}catch(e){statusEl.textContent="error";return;}
+    if(snap.lines.length){consoleEl.textContent+=snap.lines.join("\n")+"\n";consoleEl.scrollTop=consoleEl.scrollHeight;since=snap.next;}
     statusEl.className="statuspill "+snap.status;
-    statusEl.textContent = snap.status==="running" ? "running…" : snap.status + (snap.returncode!=null?` (exit ${snap.returncode})`:"");
-    if(elapsedEl) elapsedEl.textContent = snap.elapsed_s+" s";
-    if(snap.status==="running"){ setTimeout(tick, 500); }
-    else if(onDone){ onDone(snap); }
-  };
+    statusEl.textContent=snap.status==="running"?"running…":snap.status+(snap.returncode!=null?` (exit ${snap.returncode})`:"");
+    if(elapsedEl)elapsedEl.textContent=snap.elapsed_s+" s";
+    if(snap.status==="running")setTimeout(tick,500); else if(onDone)onDone(snap);};
   tick();
 }
+function runJob(cmd,args,consoleEl,statusEl,onDone,stopBtn,runBtn,elapsedEl){
+  return api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd,args})})
+    .then(({job_id})=>{
+      if(stopBtn){stopBtn.classList.remove("hidden");stopBtn.onclick=()=>api("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job_id})});}
+      if(runBtn)runBtn.disabled=true;
+      streamJob(job_id,consoleEl,statusEl,(snap)=>{if(runBtn)runBtn.disabled=false;if(stopBtn)stopBtn.classList.add("hidden");if(onDone)onDone(snap);},elapsedEl);
+    }).catch(e=>{statusEl.textContent="error";consoleEl.textContent=String(e);});
+}
 
-// ---- RUN tab ----
-function argField(a){
-  const id = "arg_"+a.name;
-  const hint = a.help ? ` <span class="hint">${a.help}</span>` : "";
-  const lab = (inner)=>el("label",{class:"f"},[el("span",{html:a.name.replace(/_/g," ")+hint}), inner]);
-  if(a.type==="bool"){ const c=el("input",{type:"checkbox",id}); if(a.default)c.checked=true;
-    return el("label",{class:"f inline"},[c, el("span",{html:" "+a.name.replace(/_/g," ")+hint})]); }
-  if(a.type==="config"){ const s=el("select",{id}); (STATE.configs||[]).forEach(c=>s.appendChild(el("option",{value:c},c))); return lab(s); }
-  if(a.type==="choice"){ const s=el("select",{id}); a.choices.forEach(c=>{const o=el("option",{value:c},c); if(c===a.default)o.selected=true; s.appendChild(o);}); return lab(s); }
+// ---- HOME ----
+const HOME_CARDS=[
+  {v:"run",ic:"▶️",t:"Run a tool",d:"Simulate a config, optimize a design, generate force tables, or QC them — with live output."},
+  {v:"sweep",ic:"📈",t:"Sweep & estimate",d:"Set how large and detailed a FEM sweep should be, see how long it'll take, then launch it."},
+  {v:"analyze",ic:"🔬",t:"Analyze force tables",d:"Coupling curves, heatmaps, quality checks, and analytic-vs-FEM accuracy for every table."},
+  {v:"optimizer",ic:"🏁",t:"Optimizer run",d:"Watch a design search converge and inspect the current best design."},
+];
+async function renderHome(){
+  const box=$("#homeActions"); box.innerHTML="";
+  HOME_CARDS.forEach(c=>{const a=el("div",{class:"action"},[
+    el("div",{class:"aic"},c.ic), el("h4",{},c.t), el("p",{},c.d)]); a.onclick=()=>go(c.v); box.appendChild(a);});
+  const s=$("#homeStatus"); s.innerHTML="";
+  const add=(label,val,cls="")=>s.appendChild(el("div",{class:"tile"},[el("div",{class:"v "+cls,html:val}),el("div",{class:"l"},label)]));
+  add("FEMM backend", STATE.femm_available?'<span style="color:var(--green)">ready</span>':'<span class="muted">not installed</span>');
+  add("Runnable tools", Object.keys(STATE.commands).length);
+  add("Example configs", (STATE.configs||[]).length);
+  try{const {luts}=await api(`/api/luts?dir=${encodeURIComponent(STATE.default_lut_dir)}`);
+    add("Force tables ready", luts.length?`${luts.length}`:'<span class="muted">0</span>');}catch(e){}
+}
+
+// ---- RUN ----
+function argField(a){const id="arg_"+a.name;const hint=a.help?` <span class="hint">${a.help}</span>`:"";
+  const lab=(inner)=>el("label",{class:"f"},[el("span",{html:a.name.replace(/_/g," ")+hint}),inner]);
+  if(a.type==="bool"){const c=el("input",{type:"checkbox",id});if(a.default)c.checked=true;
+    return el("label",{class:"f inline"},[c,el("span",{html:" "+a.name.replace(/_/g," ")+hint})]);}
+  if(a.type==="config"){const s=el("select",{id});(STATE.configs||[]).forEach(c=>s.appendChild(el("option",{value:c},c)));return lab(s);}
+  if(a.type==="choice"){const s=el("select",{id});a.choices.forEach(c=>{const o=el("option",{value:c},c);if(c===a.default)o.selected=true;s.appendChild(o);});return lab(s);}
   const inp=el("input",{id,type:(a.type==="int"||a.type==="number")?"number":"text"});
-  if(a.default!=null) inp.value=a.default; if(a.type==="int")inp.step="1";
-  return lab(inp);
-}
-function renderCmd(){
-  const cmd = $("#cmdSel").value, spec = STATE.commands[cmd];
-  $("#cmdHelp").textContent = spec.help;
-  const box=$("#cmdArgs"); box.innerHTML="";
-  spec.args.forEach(a=>box.appendChild(argField(a)));
-}
-function collectArgs(spec){
-  const args={};
-  spec.args.forEach(a=>{ const e=document.getElementById("arg_"+a.name); if(!e)return;
-    args[a.name] = a.type==="bool" ? e.checked : (e.value===""?null:(a.type==="int"?parseInt(e.value):a.type==="number"?parseFloat(e.value):e.value)); });
-  return args;
-}
-$("#runBtn").onclick = async () => {
-  const cmd=$("#cmdSel").value, spec=STATE.commands[cmd];
-  try{
-    const {job_id} = await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({cmd, args:collectArgs(spec)})});
-    $("#stopBtn").classList.remove("hidden"); $("#runBtn").disabled=true;
-    $("#stopBtn").onclick=()=>api("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job_id})});
-    streamJob(job_id, $("#runConsole"), $("#runStatus"), ()=>{ $("#runBtn").disabled=false; $("#stopBtn").classList.add("hidden"); }, $("#runElapsed"));
-  }catch(e){ $("#runStatus").textContent="error"; $("#runConsole").textContent=String(e); }
-};
+  if(a.default!=null)inp.value=a.default;if(a.type==="int")inp.step="1";return lab(inp);}
+function renderCmd(){const cmd=$("#cmdSel").value,spec=STATE.commands[cmd];
+  $("#cmdHelp").textContent=spec.help;const box=$("#cmdArgs");box.innerHTML="";spec.args.forEach(a=>box.appendChild(argField(a)));}
+function collectArgs(spec){const args={};spec.args.forEach(a=>{const e=document.getElementById("arg_"+a.name);if(!e)return;
+  args[a.name]=a.type==="bool"?e.checked:(e.value===""?null:(a.type==="int"?parseInt(e.value):a.type==="number"?parseFloat(e.value):e.value));});return args;}
+$("#runBtn").onclick=()=>{const cmd=$("#cmdSel").value,spec=STATE.commands[cmd];
+  runJob(cmd,collectArgs(spec),$("#runConsole"),$("#runStatus"),null,$("#stopBtn"),$("#runBtn"),$("#runElapsed"));};
 
-// ---- SWEEP tab ----
-function syncMeshVisibility(){ $("#swMeshWrap").style.display = $("#swBackend").value==="femm" ? "" : "none"; }
+// ---- SWEEP ----
+function syncMesh(){$("#swMeshWrap").style.display=$("#swBackend").value==="femm"?"":"none";}
 document.querySelectorAll("#swPreset .chip").forEach(c=>c.onclick=()=>{
-  document.querySelectorAll("#swPreset .chip").forEach(x=>x.classList.remove("on")); c.classList.add("on");
-  $("#swOffsets").value=c.dataset.off; $("#swCurrents").value=c.dataset.cur;
-});
-$("#swBackend").onchange=syncMeshVisibility;
-$("#estBtn").onclick = async () => {
-  $("#estErr").classList.add("hidden");
-  $("#estBtn").disabled=true; $("#estBtn").textContent="Estimating…";
-  try{
-    const body={config:$("#swConfig").value, backend:$("#swBackend").value,
-      n_offsets:+$("#swOffsets").value, n_currents:+$("#swCurrents").value,
-      n_geometries:+$("#swGeoms").value, mesh_frac:+$("#swMesh").value};
+  document.querySelectorAll("#swPreset .chip").forEach(x=>x.classList.remove("on"));c.classList.add("on");
+  $("#swOffsets").value=c.dataset.off;$("#swCurrents").value=c.dataset.cur;});
+$("#swBackend").onchange=syncMesh;
+$("#estBtn").onclick=async()=>{$("#estErr").classList.add("hidden");$("#estBtn").disabled=true;$("#estBtn").textContent="Estimating…";
+  try{const body={config:$("#swConfig").value,backend:$("#swBackend").value,n_offsets:+$("#swOffsets").value,
+      n_currents:+$("#swCurrents").value,n_geometries:+$("#swGeoms").value,mesh_frac:+$("#swMesh").value};
     const e=await api("/api/estimate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     $("#estSolves").textContent=e.n_solves.toLocaleString();
     $("#estPer").textContent=e.seconds_per_solve<0.01?"<0.01":e.seconds_per_solve.toFixed(3);
-    $("#estTime").textContent=fmtTime(e.total_seconds);
-    $("#estNote").textContent=e.note;
-    $("#estOut").classList.remove("hidden");
-  }catch(err){ $("#estErr").textContent=String(err); $("#estErr").classList.remove("hidden"); }
-  $("#estBtn").disabled=false; $("#estBtn").textContent="Estimate time";
-};
-$("#sweepBtn").onclick = async () => {
-  const args={config:$("#swConfig").value, outdir:$("#swOutdir").value, backend:$("#swBackend").value,
-    n_offsets:+$("#swOffsets").value, n_currents:+$("#swCurrents").value};
-  try{
-    const {job_id}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:"femgen",args})});
-    $("#sweepStopBtn").classList.remove("hidden"); $("#sweepBtn").disabled=true; $("#qcBtn").classList.add("hidden");
-    $("#sweepStopBtn").onclick=()=>api("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job_id})});
-    streamJob(job_id, $("#sweepConsole"), $("#sweepStatus"), (snap)=>{
-      $("#sweepBtn").disabled=false; $("#sweepStopBtn").classList.add("hidden");
-      if(snap.status==="done"){ $("#qcBtn").classList.remove("hidden"); $("#lutDir").value=$("#swOutdir").value; }
-    });
-  }catch(e){ $("#sweepStatus").textContent="error"; $("#sweepConsole").textContent=String(e); }
-};
-$("#qcBtn").onclick = async () => {
-  try{
-    const {job_id}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({cmd:"femqc",args:{inputs:$("#swOutdir").value}})});
-    streamJob(job_id, $("#sweepConsole"), $("#sweepStatus"), null);
-  }catch(e){ $("#sweepConsole").textContent=String(e); }
-};
+    $("#estTime").textContent=fmtTime(e.total_seconds);$("#estNote").textContent=e.note;$("#estOut").classList.remove("hidden");
+  }catch(err){$("#estErr").textContent=String(err);$("#estErr").classList.remove("hidden");}
+  $("#estBtn").disabled=false;$("#estBtn").textContent="⏱ Estimate time";};
+$("#sweepBtn").onclick=()=>{$("#sweepDone").classList.add("hidden");
+  const args={config:$("#swConfig").value,outdir:$("#swOutdir").value,backend:$("#swBackend").value,
+    n_offsets:+$("#swOffsets").value,n_currents:+$("#swCurrents").value};
+  runJob("femgen",args,$("#sweepConsole"),$("#sweepStatus"),(snap)=>{
+    if(snap.status==="done"){$("#sweepDone").classList.remove("hidden");$("#lutDir").value=$("#swOutdir").value;}},
+    $("#sweepStopBtn"),$("#sweepBtn"));};
+$("#qcBtn").onclick=()=>runJob("femqc",{inputs:$("#swOutdir").value},$("#sweepConsole"),$("#sweepStatus"),null);
+$("#toAnalyze").onclick=()=>{$("#lutDir").value=$("#swOutdir").value;go("analyze");loadAnalyzeDir();};
+$("#emptyToSweep").onclick=()=>go("sweep");
 
 // ---- charts ----
-function lineChart(series, xs, opts={}){
-  const W=680,H=300,ml=54,mr=14,mt=12,mb=34;
-  const xmin=Math.min(...xs), xmax=Math.max(...xs);
-  let ymin=Infinity,ymax=-Infinity; series.forEach(s=>s.ys.forEach(y=>{ if(y<ymin)ymin=y; if(y>ymax)ymax=y; }));
-  if(ymin===ymax){ymin-=1;ymax+=1;} const pad=(ymax-ymin)*0.08; ymin-=pad; ymax+=pad;
+function lineChart(series,xs,opts={}){
+  const W=680,H=290,ml=56,mr=16,mt=12,mb=36;
+  const xmin=Math.min(...xs),xmax=Math.max(...xs);
+  let ymin=Infinity,ymax=-Infinity;series.forEach(s=>s.ys.forEach(y=>{if(y<ymin)ymin=y;if(y>ymax)ymax=y;}));
+  if(ymin===ymax){ymin-=1;ymax+=1;}const pad=(ymax-ymin)*0.08;ymin-=pad;ymax+=pad;
   const sx=x=>ml+(x-xmin)/((xmax-xmin)||1)*(W-ml-mr);
   const sy=y=>H-mb-(y-ymin)/((ymax-ymin)||1)*(H-mt-mb);
   const ticks=(a,b,n)=>Array.from({length:n},(_,i)=>a+(b-a)*i/(n-1));
   let g="";
-  ticks(ymin,ymax,5).forEach(v=>{const y=sy(v); g+=`<line x1="${ml}" y1="${y}" x2="${W-mr}" y2="${y}" stroke="var(--line)"/><text x="${ml-7}" y="${y+3}" text-anchor="end">${v.toFixed(2)}</text>`;});
-  ticks(xmin,xmax,6).forEach(v=>{const x=sx(v); g+=`<line x1="${x}" y1="${mt}" x2="${x}" y2="${H-mb}" stroke="var(--line)" opacity=".5"/><text x="${x}" y="${H-mb+15}" text-anchor="middle">${(v*(opts.xscale||1)).toFixed(opts.xdec??1)}</text>`;});
-  // zero line
-  if(ymin<0&&ymax>0){const y=sy(0); g+=`<line x1="${ml}" y1="${y}" x2="${W-mr}" y2="${y}" stroke="var(--mut)" opacity=".5" stroke-dasharray="3 3"/>`;}
-  series.forEach((s,i)=>{ const c=s.color||SERIES_COLORS[i%SERIES_COLORS.length];
+  ticks(ymin,ymax,5).forEach(v=>{const y=sy(v);g+=`<line x1="${ml}" y1="${y}" x2="${W-mr}" y2="${y}" stroke="var(--line)"/><text x="${ml-8}" y="${y+3}" text-anchor="end">${fmtNum(v,2)}</text>`;});
+  ticks(xmin,xmax,6).forEach(v=>{const x=sx(v);g+=`<text x="${x}" y="${H-mb+16}" text-anchor="middle">${(v*(opts.xscale||1)).toFixed(opts.xdec??1)}</text>`;});
+  if(ymin<0&&ymax>0){const y=sy(0);g+=`<line x1="${ml}" y1="${y}" x2="${W-mr}" y2="${y}" stroke="var(--mut)" opacity=".5" stroke-dasharray="3 3"/>`;}
+  if(xmin<0&&xmax>0){const x=sx(0);g+=`<line x1="${x}" y1="${mt}" x2="${x}" y2="${H-mb}" stroke="var(--mut)" opacity=".4" stroke-dasharray="3 3"/>`;}
+  series.forEach((s,i)=>{const c=s.color||SERIES_COLORS[i%SERIES_COLORS.length];
     const pts=s.ys.map((y,k)=>`${sx(xs[k]).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
-    g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2"/>`; });
-  g+=`<text x="${(ml+W-mr)/2}" y="${H-4}" text-anchor="middle">${opts.xlabel||""}</text>`;
-  g+=`<text x="14" y="${(mt+H-mb)/2}" text-anchor="middle" transform="rotate(-90 14 ${(mt+H-mb)/2})">${opts.ylabel||""}</text>`;
+    g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2"${s.dash?' stroke-dasharray="5 4" opacity=".8"':''}/>`;});
+  g+=`<text x="${(ml+W-mr)/2}" y="${H-3}" text-anchor="middle">${opts.xlabel||""}</text>`;
+  g+=`<text x="13" y="${(mt+H-mb)/2}" text-anchor="middle" transform="rotate(-90 13 ${(mt+H-mb)/2})">${opts.ylabel||""}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`;
+}
+function diverging(v,m){ // -m..m -> blue..neutral..red
+  const t=Math.max(-1,Math.min(1,v/(m||1)));
+  const lo=[76,114,176],hi=[196,78,82],nz=[150,155,165];
+  const mix=(a,b,f)=>a.map((x,i)=>Math.round(x+(b[i]-x)*f));
+  const c=t<0?mix(nz,lo,-t):mix(nz,hi,t);return `rgb(${c[0]},${c[1]},${c[2]})`;}
+function heatmap(offsets,currents,grid,opts={}){
+  const W=680,H=300,ml=56,mr=64,mt=14,mb=36;
+  const nx=offsets.length,ny=currents.length;
+  const cw=(W-ml-mr)/nx,ch=(H-mt-mb)/ny;
+  let m=0;grid.forEach(r=>r.forEach(v=>{if(Math.abs(v)>m)m=Math.abs(v);}));
+  let g="";
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const v=grid[i][j];
+    g+=`<rect x="${(ml+i*cw).toFixed(1)}" y="${(mt+(ny-1-j)*ch).toFixed(1)}" width="${cw+0.6}" height="${ch+0.6}" fill="${diverging(v,m)}"/>`;}
+  // axes labels
+  [0,Math.floor(nx/2),nx-1].forEach(i=>{const x=ml+(i+0.5)*cw;g+=`<text x="${x}" y="${H-mb+16}" text-anchor="middle">${(offsets[i]*1000).toFixed(0)}</text>`;});
+  [0,Math.floor(ny/2),ny-1].forEach(j=>{const y=mt+(ny-1-j)*ch+ch/2;g+=`<text x="${ml-8}" y="${y+3}" text-anchor="end">${(+currents[j]).toFixed(1)}</text>`;});
+  g+=`<text x="${(ml+W-mr)/2}" y="${H-3}" text-anchor="middle">offset (mm)</text>`;
+  g+=`<text x="13" y="${(mt+H-mb)/2}" text-anchor="middle" transform="rotate(-90 13 ${(mt+H-mb)/2})">current (A)</text>`;
+  // colorbar
+  const cbx=W-mr+18,cbw=12,cbh=H-mt-mb;
+  for(let k=0;k<=40;k++){const v=m-2*m*k/40;g+=`<rect x="${cbx}" y="${(mt+cbh*k/40).toFixed(1)}" width="${cbw}" height="${cbh/40+0.6}" fill="${diverging(v,m)}"/>`;}
+  g+=`<text x="${cbx+cbw+3}" y="${mt+6}" >${fmtNum(m,1)}</text><text x="${cbx+cbw+3}" y="${mt+cbh}" >-${fmtNum(m,1)}</text><text x="${cbx+cbw+3}" y="${mt+cbh/2}">0 N</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`;
 }
 
-// ---- VISUALIZE tab ----
-$("#lutLoadBtn").onclick = async () => {
-  try{
-    const {luts}=await api(`/api/luts?dir=${encodeURIComponent($("#lutDir").value)}`);
-    const s=$("#lutSel"); s.innerHTML="";
-    luts.forEach(p=>s.appendChild(el("option",{value:p}, p.split("/").pop())));
-    $("#lutCount").textContent = luts.length ? `${luts.length} table(s)` : "no .npz tables found";
-    if(luts.length) showLut(luts[0]);
-    else $("#lutCard").classList.add("hidden");
-  }catch(e){ $("#lutCount").textContent=String(e); }
-};
-$("#lutSel").onchange = () => showLut($("#lutSel").value);
-async function showLut(path){
-  const d = await api(`/api/lut?path=${encodeURIComponent(path)}`);
-  $("#lutCard").classList.remove("hidden");
-  // one force-vs-offset curve per current column
-  const xs=d.offsets_m, series=[];
-  d.currents_a.forEach((cur,j)=>{ if(Math.abs(cur)<1e-9) return;
-    series.push({name:`${(+cur).toFixed(2)} A`, ys:d.force_n.map(row=>row[j])}); });
-  $("#lutChart").innerHTML = lineChart(series, xs, {xlabel:"offset (mm)", ylabel:"force (N)", xscale:1000, xdec:0});
-  $("#lutLegend").innerHTML = series.map((s,i)=>`<span><i style="background:${SERIES_COLORS[i%SERIES_COLORS.length]}"></i>${s.name}</span>`).join("");
-  const q=d.qc;
-  $("#qcVerdict").innerHTML = q.ok ? `<span class="statuspill done">OK</span>` : `<span class="statuspill failed">SUSPECT</span>`;
-  const rows = q.checks.map(c=>{
-    const dot = !c.applicable ? '<span class="dot skip"></span>' : c.passed ? '<span class="dot ok"></span>' : '<span class="dot bad"></span>';
-    const st = !c.applicable ? "skipped" : c.passed ? "ok" : "FAIL";
-    return `<tr><td>${dot}${c.name}</td><td>${st}</td><td class="muted">${c.detail}</td><td class="muted">${c.applicable?c.value.toFixed(4)+" / "+c.tolerance.toFixed(4):"—"}</td></tr>`;
-  }).join("");
-  $("#qcTable").innerHTML = `<tr><th>check</th><th>result</th><th>detail</th><th>value / tol</th></tr>`+rows;
+// ---- ANALYZE ----
+$("#lutLoadBtn").onclick=loadAnalyzeDir;
+async function loadAnalyzeDir(){
+  $("#analyzeBody").innerHTML="";$("#analyzeEmpty").classList.add("hidden");
+  let rows;try{rows=(await api(`/api/qcdir?dir=${encodeURIComponent($("#lutDir").value)}`)).rows;}
+  catch(e){$("#batchCard").classList.add("hidden");$("#analyzeEmpty").classList.remove("hidden");return;}
+  if(!rows.length){$("#batchCard").classList.add("hidden");$("#analyzeEmpty").classList.remove("hidden");return;}
+  const nBad=rows.filter(r=>!r.ok).length;
+  $("#batchSummary").innerHTML=` — ${rows.length} table${rows.length>1?"s":""}, `+
+    (nBad?`<span style="color:var(--red)">${nBad} suspect</span>`:`<span style="color:var(--green)">all OK</span>`);
+  const head=`<tr><th>table</th><th>verdict</th><th>peak |F|</th><th>failed checks</th></tr>`;
+  const body=rows.map((r,i)=>{const dot=r.ok?'<span class="dot ok"></span>':'<span class="dot bad"></span>';
+    const verdict=r.ok?'OK':(r.error?'error':'SUSPECT');
+    return `<tr class="clickable" data-path="${r.path}" data-i="${i}"><td>${dot}${r.name}</td><td>${verdict}</td>`+
+      `<td>${r.peak_force_n!=null?fmtNum(r.peak_force_n,3)+" N":"—"}</td>`+
+      `<td class="muted">${(r.failed&&r.failed.length)?r.failed.join(", "):(r.error||"—")}</td></tr>`;}).join("");
+  $("#batchTable").innerHTML=head+body;$("#batchCard").classList.remove("hidden");
+  $("#batchTable").querySelectorAll("tr.clickable").forEach(tr=>tr.onclick=()=>{
+    $("#batchTable").querySelectorAll("tr").forEach(x=>x.classList.remove("sel"));tr.classList.add("sel");
+    showAnalysis(tr.dataset.path);});
+  showAnalysis(rows[0].path);$("#batchTable").querySelector("tr.clickable")?.classList.add("sel");
+}
+async function showAnalysis(path){
+  const body=$("#analyzeBody");body.innerHTML='<div class="card"><p class="muted">Analyzing…</p></div>';
+  let d;try{d=await api(`/api/lut?path=${encodeURIComponent(path)}`);}catch(e){body.innerHTML=`<div class="card err">${e}</div>`;return;}
+  const st=d.stats,cmp=d.comparison;
+  // stat tiles
+  const tiles=[["peak thrust",fmtNum(st.peak_force_n,3),"N"],["thrust constant kₐ",fmtNum(st.force_per_amp_n_a,3),"N/A"],
+    ["peak offset x_c",fmtNum(st.peak_offset_mm,1),"mm"],["coupling width",fmtNum(st.coupling_width_mm,1),"mm"],
+    ["far-field residual",(st.far_field_frac*100).toFixed(1),"% of peak"]];
+  if(cmp)tiles.push(["vs analytic (max)",(cmp.max_rel_error*100).toFixed(1),"% err"]);
+  const tileHtml=tiles.map(t=>`<div class="tile"><div class="v">${t[1]} <small>${t[2]}</small></div><div class="l">${t[0]}</div></div>`).join("");
+  // force vs offset (per current) + analytic overlay
+  const xs=d.offsets_m,fseries=[];
+  d.currents_a.forEach((cur,j)=>{if(Math.abs(cur)<1e-9)return;fseries.push({name:`${(+cur).toFixed(2)} A`,ys:d.force_n.map(r=>r[j])});});
+  let overlayNote="";
+  if(d.analytic_force_n){d.currents_a.forEach((cur,j)=>{if(Math.abs(cur)<1e-9)return;
+    fseries.push({name:`${(+cur).toFixed(2)} A (analytic)`,ys:d.analytic_force_n.map(r=>r[j]),
+      color:SERIES_COLORS[fseries.length%SERIES_COLORS.length],dash:true});});
+    overlayNote=`<span><i class="dash"></i>dashed = analytic model</span>`;}
+  const legendF=d.currents_a.filter(c=>Math.abs(c)>1e-9).map((cur,i)=>`<span><i style="background:${SERIES_COLORS[i%6]}"></i>${(+cur).toFixed(2)} A</span>`).join("")+overlayNote;
+  // force vs current at peak offset (linearity)
+  const ipk=d.force_n.map(r=>Math.max(...r.map(Math.abs))).reduce((bi,v,i,arr)=>v>arr[bi]?i:bi,0);
+  const fvi={name:"force",ys:d.currents_a.map((_,j)=>d.force_n[ipk][j])};
+  // metadata
+  const md=d.metadata||{};const mdRows=Object.entries(md).map(([k,v])=>`<tr><td>${k}</td><td>${typeof v==="number"?fmtNum(v,4):v}</td></tr>`).join("");
+  // qc
+  const q=d.qc;const qcRows=q.checks.map(c=>{const dot=!c.applicable?'<span class="dot skip"></span>':c.passed?'<span class="dot ok"></span>':'<span class="dot bad"></span>';
+    const stt=!c.applicable?"skipped":c.passed?"ok":"FAIL";
+    return `<tr><td>${dot}${c.name}</td><td>${stt}</td><td class="muted">${c.detail}</td><td class="muted">${c.applicable?fmtNum(c.value,4)+" / "+fmtNum(c.tolerance,4):"—"}</td></tr>`;}).join("");
+  const cmpLine=cmp?`<p class="muted small" style="margin-top:8px">Compared to the fast analytic model over this grid: max ${(cmp.max_rel_error*100).toFixed(1)}%, mean ${(cmp.mean_rel_error*100).toFixed(1)}% of peak. Source backend: <b>${cmp.backend}</b>.</p>`:"";
+  body.innerHTML=`
+    <div class="card"><h3>${path.split("/").pop()} <span class="${q.ok?'statuspill done':'statuspill failed'}" style="margin-left:6px">${q.ok?'OK':'SUSPECT'}</span></h3>
+      <div class="tiles">${tileHtml}</div>${cmpLine}</div>
+    <div class="row">
+      <div class="col card"><div class="section-sub">Force vs. slug offset</div><div>${lineChart(fseries,xs,{xlabel:"offset (mm)",ylabel:"force (N)",xscale:1000,xdec:0})}</div><div class="legend">${legendF}</div></div>
+      <div class="col card"><div class="section-sub">Force vs. current (at peak offset)</div><div>${lineChart([fvi],d.currents_a,{xlabel:"current (A)",ylabel:"force (N)",xdec:0})}</div><p class="muted small">A straight line through the origin confirms the PM force is linear in current.</p></div>
+    </div>
+    <div class="card"><div class="section-sub">Force map (offset × current)</div><div>${heatmap(d.offsets_m,d.currents_a,d.force_n)}</div></div>
+    <div class="row">
+      <div class="col card"><div class="section-sub">Quality control</div><table><tr><th>check</th><th>result</th><th>detail</th><th>value / tol</th></tr>${qcRows}</table></div>
+      <div class="col card"><div class="section-sub">Source geometry</div><table class="metatable">${mdRows||'<tr><td class="muted">no metadata</td></tr>'}</table></div>
+    </div>`;
 }
 
-// ---- OPTIMIZER tab ----
-$("#optReload").onclick = loadOptimizer;
+// ---- OPTIMIZER ----
+$("#optReload").onclick=loadOptimizer;
 async function loadOptimizer(){
-  const {latest}=await api("/api/optimizer");
-  const body=$("#optBody");
-  if(!latest){ body.innerHTML='<p class="muted">No snapshot found. Run an optimizer search (an MCP run writes build/optimize_results/latest.json).</p>'; return; }
-  const hist = latest.history || latest.convergence || [];
-  const best = latest.best_knobs || latest.best || {};
-  let html="";
-  const bestSpeed = latest.best_speed_mps ?? latest.best_value ?? (hist.length?Math.max(...hist.map(h=>h.best??h.value??h)):null);
-  html += `<div class="tiles"><div class="tile"><div class="v">${bestSpeed!=null?(+bestSpeed).toFixed(3):"–"}</div><div class="l">best exit speed (m/s)</div></div>`;
-  html += `<div class="tile"><div class="v">${latest.generation ?? hist.length}</div><div class="l">generations</div></div></div>`;
-  if(hist.length){
-    const ys = hist.map(h=>+(h.best??h.value??h)); const xs=ys.map((_,i)=>i);
-    html += `<div style="margin-top:14px">`+lineChart([{name:"best",ys,color:"#55A868"}],xs,{xlabel:"generation",ylabel:"exit speed (m/s)",xdec:0})+`</div>`;
-  }
-  if(Object.keys(best).length){
-    html += `<h3 style="margin-top:16px">Best design</h3><table><tr><th>knob</th><th>value</th></tr>`+
-      Object.entries(best).map(([k,v])=>`<tr><td>${k}</td><td>${typeof v==="number"?(+v).toPrecision(4):v}</td></tr>`).join("")+`</table>`;
-  }
-  body.innerHTML=html;
-  $("#optWhen").textContent = latest.updated || latest.timestamp || "";
+  const {latest}=await api("/api/optimizer");const body=$("#optBody");
+  if(!latest){body.innerHTML='<div class="empty"><div class="big">🏁</div><div>No optimizer snapshot yet.</div><div class="small" style="margin-top:6px">Run a search — an MCP run writes build/optimize_results/latest.json.</div></div>';return;}
+  const hist=latest.history||latest.convergence||[];const best=latest.best_knobs||latest.best||{};
+  const bestSpeed=latest.best_speed_mps??latest.best_value??(hist.length?Math.max(...hist.map(h=>h.best??h.value??h)):null);
+  let html=`<div class="tiles"><div class="tile"><div class="v">${bestSpeed!=null?(+bestSpeed).toFixed(3)+' <small>m/s</small>':"–"}</div><div class="l">best exit speed</div></div>`+
+    `<div class="tile"><div class="v">${latest.generation??hist.length}</div><div class="l">generations</div></div></div>`;
+  if(hist.length){const ys=hist.map(h=>+(h.best??h.value??h));const xs=ys.map((_,i)=>i);
+    html+=`<div style="margin-top:16px">`+lineChart([{name:"best",ys,color:"#55A868"}],xs,{xlabel:"generation",ylabel:"exit speed (m/s)",xdec:0})+`</div>`;}
+  if(Object.keys(best).length)html+=`<div class="section-sub" style="margin-top:16px">Best design</div><table class="metatable">`+
+    Object.entries(best).map(([k,v])=>`<tr><td>${k}</td><td>${typeof v==="number"?(+v).toPrecision(4):v}</td></tr>`).join("")+`</table>`;
+  body.innerHTML=html;$("#optWhen").textContent=latest.updated||latest.timestamp||"";
 }
 
 // ---- boot ----
-(async ()=>{
-  STATE = await api("/api/state");
-  $("#cwd").textContent = STATE.cwd;
-  const fb=$("#femmBadge"); fb.textContent = STATE.femm_available?"FEMM ready":"FEMM not installed";
-  fb.className = "badge "+(STATE.femm_available?"on":"off");
-  const cs=$("#cmdSel"); Object.entries(STATE.commands).forEach(([k,v])=>cs.appendChild(el("option",{value:k},v.label)));
-  cs.onchange=renderCmd; renderCmd();
-  const sc=$("#swConfig"); (STATE.configs||[]).forEach(c=>sc.appendChild(el("option",{value:c},c)));
-  // default the sweep config to a *_fem.toml if present
-  const femCfg=(STATE.configs||[]).find(c=>c.includes("fem")); if(femCfg) sc.value=femCfg;
-  syncMeshVisibility();
+(async()=>{
+  STATE=await api("/api/state");
+  $("#cwd").textContent=STATE.cwd;
+  const fb=$("#femmBadge");fb.textContent=STATE.femm_available?"● FEMM ready":"○ FEMM not installed";
+  fb.className="badge "+(STATE.femm_available?"on":"off");
+  const cs=$("#cmdSel");Object.entries(STATE.commands).forEach(([k,v])=>cs.appendChild(el("option",{value:k},v.label)));
+  cs.onchange=renderCmd;renderCmd();
+  const sc=$("#swConfig");(STATE.configs||[]).forEach(c=>sc.appendChild(el("option",{value:c},c)));
+  const femCfg=(STATE.configs||[]).find(c=>c.includes("fem"));if(femCfg)sc.value=femCfg;
+  syncMesh();renderHome();
 })();
 </script>
 </body>

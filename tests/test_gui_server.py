@@ -118,3 +118,51 @@ def test_safe_path_blocks_directory_traversal():
 def test_list_configs_finds_the_example_configs():
     configs = S.list_configs()
     assert any(c.endswith("linear_stepper_5coil.toml") for c in configs)
+
+
+def test_analyze_lut_reports_stats_and_analytic_overlay():
+    rel = "build/gui_test/coil.npz"
+    _make_lut_file(rel)                                 # metadata carries the source geometry
+    try:
+        d = S.analyze_lut(rel, compare=True)
+        st = d["stats"]
+        # a real coupling: nonzero peak thrust, a positive coupling half-width and lobe width
+        assert st["peak_force_n"] > 0 and st["force_per_amp_n_a"] > 0
+        assert st["peak_offset_mm"] >= 0 and st["coupling_width_mm"] > 0
+        assert 0.0 <= st["far_field_frac"] < 0.2        # a full sweep has decayed at the edge
+        # the LUT was built by the analytic backend, so the overlay must match it ~exactly
+        assert "analytic_force_n" in d
+        assert d["comparison"]["max_rel_error"] < 1e-6
+        json.dumps(d, default=S._json_default)
+    finally:
+        shutil.rmtree(S.REPO_ROOT / "build" / "gui_test", ignore_errors=True)
+
+
+def test_analyze_lut_without_geometry_metadata_skips_overlay():
+    from emac_sim.fem.lut import ForceLUT
+    rel = "build/gui_test/bare.npz"
+    path = S.REPO_ROOT / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    offsets = np.linspace(-0.05, 0.05, 9)
+    currents = np.array([-3.0, 0.0, 3.0])
+    force = np.outer(-np.sin(offsets / 0.02), currents) * 0.3
+    ForceLUT(offsets, currents, force, metadata={"backend": "hand"}).save(path)  # no geometry
+    try:
+        d = S.analyze_lut(rel, compare=True)
+        assert "analytic_force_n" not in d and "comparison" not in d
+        assert d["stats"]["peak_force_n"] > 0
+    finally:
+        shutil.rmtree(S.REPO_ROOT / "build" / "gui_test", ignore_errors=True)
+
+
+def test_qc_directory_batch_triages_every_table():
+    _make_lut_file("build/gui_test/a.npz")
+    _make_lut_file("build/gui_test/b.npz")
+    try:
+        rows = S.qc_directory("build/gui_test")
+        assert len(rows) == 2
+        for r in rows:
+            assert r["ok"] is True and r["peak_force_n"] > 0 and r["failed"] == []
+        json.dumps(rows, default=S._json_default)
+    finally:
+        shutil.rmtree(S.REPO_ROOT / "build" / "gui_test", ignore_errors=True)

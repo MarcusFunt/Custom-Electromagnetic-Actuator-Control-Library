@@ -310,26 +310,106 @@ def estimate_sweep(config: str, n_offsets: int, n_currents: int, n_geometries: i
     }
 
 
-def lut_to_json(path: str, reluctance: bool = False) -> dict[str, Any]:
-    """Load a saved ForceLUT and return its grid + a quality-control verdict for plotting."""
+def _lut_stats(offsets, currents, force) -> dict[str, Any]:
+    """Physically meaningful summary of a coupling table -- the numbers a researcher reads
+    off a force curve: peak thrust, the thrust constant k_a, where the coupling peaks (x_c),
+    how wide the lobe is (half-max full width), and how far the far-field tail has decayed."""
+    import numpy as np
+    peak = float(np.max(np.abs(force)))
+    j_pk = int(np.argmax(np.abs(currents)))
+    col = np.abs(force[:, j_pk])
+    i_pk = int(np.argmax(col))
+    peak_offset = float(offsets[i_pk])
+    i_at_peak = float(currents[j_pk]) or 1.0
+    # half-max full width around the peak lobe (in the peak-current column)
+    half = 0.5 * col[i_pk]
+    lo = i_pk
+    while lo > 0 and col[lo] >= half:
+        lo -= 1
+    hi = i_pk
+    while hi < len(col) - 1 and col[hi] >= half:
+        hi += 1
+    width = float(offsets[hi] - offsets[lo])
+    edge = float(max(abs(force[0, j_pk]), abs(force[-1, j_pk]))) / peak if peak else 0.0
+    return {
+        "peak_force_n": peak,
+        "force_per_amp_n_a": peak / abs(i_at_peak) if i_at_peak else 0.0,
+        "peak_offset_mm": abs(peak_offset) * 1e3,       # x_c is a positive half-width; the
+                                                        # coupling is odd so the peak lands on
+                                                        # whichever lobe -- report the distance
+        "coupling_width_mm": width * 1e3,
+        "far_field_frac": edge,
+        "offset_span_mm": float(offsets[-1] - offsets[0]) * 1e3,
+        "current_span_a": float(currents[-1] - currents[0]),
+    }
+
+
+def _analytic_overlay(metadata, offsets, currents, force):
+    """If a LUT's metadata carries its source geometry, sweep the fast analytic model over the
+    SAME grid and report the disagreement -- for a FEMM table this is the accuracy check; for
+    an analytic table it confirms consistency. Returns (analytic_grid, comparison) or None."""
+    import numpy as np
+    keys = ("turns", "coil_length_m", "radial_thickness_m", "magnet_radius_m",
+            "magnet_length_m", "remanence_t")
+    if not all(k in metadata for k in keys):
+        return None
+    from ..fem.geometry import CoilWindingGeometry, SlugGeometry
+    from ..fem.reference_backend import AnalyticReferenceBackend
+    coil = CoilWindingGeometry(0.0, int(metadata["turns"]), float(metadata["coil_length_m"]),
+                               float(metadata["radial_thickness_m"]),
+                               bore_clearance_m=float(metadata.get("bore_clearance_m", 0.0015)))
+    slug = SlugGeometry(float(metadata["magnet_radius_m"]), float(metadata["magnet_length_m"]),
+                        float(metadata["remanence_t"]))
+    ref = AnalyticReferenceBackend()
+    a = np.array([[ref.solve(coil, slug, float(o), float(c)).force_n for c in currents]
+                  for o in offsets])
+    peak = float(np.max(np.abs(force))) or 1.0
+    sig = np.abs(force) >= 0.05 * peak
+    diff = np.abs(a - force)
+    max_rel = float(np.max(diff[sig])) / peak if np.any(sig) else 0.0
+    mean_rel = float(np.mean(diff[sig])) / peak if np.any(sig) else 0.0
+    return ([[float(v) for v in row] for row in a],
+            {"max_rel_error": max_rel, "mean_rel_error": mean_rel,
+             "backend": metadata.get("backend", "?")})
+
+
+def analyze_lut(path: str, reluctance: bool = False, compare: bool = True) -> dict[str, Any]:
+    """Full analysis of one saved ForceLUT: the grid, a quality-control verdict, derived
+    physical stats, and (when the source geometry is recoverable from metadata) an
+    analytic-model overlay with error metrics."""
+    import numpy as np
     from ..fem.lut import ForceLUT
     from ..fem.quality import check_lut
 
     lut = ForceLUT.load(_safe_path(path))
     report = check_lut(lut, expect_linear_current=not reluctance, label=Path(path).name)
-    return {
+    offsets = np.asarray(lut.offsets_m)
+    currents = np.asarray(lut.currents_a)
+    force = np.asarray(lut.force_n)
+    out: dict[str, Any] = {
         "path": path,
-        "offsets_m": [float(x) for x in lut.offsets_m],
-        "currents_a": [float(x) for x in lut.currents_a],
-        "force_n": [[float(v) for v in row] for row in lut.force_n],
+        "offsets_m": [float(x) for x in offsets],
+        "currents_a": [float(x) for x in currents],
+        "force_n": [[float(v) for v in row] for row in force],
         "metadata": dict(lut.metadata),
+        "stats": _lut_stats(offsets, currents, force),
         "qc": {
             "ok": report.ok, "peak_force_n": report.peak_force_n,
+            "n_failed": len(report.failures()),
             "checks": [{"name": c.name, "passed": c.passed, "applicable": c.applicable,
                         "detail": c.detail, "value": c.value, "tolerance": c.tolerance}
                        for c in report.checks],
         },
     }
+    if compare:
+        ov = _analytic_overlay(dict(lut.metadata), offsets, currents, force)
+        if ov is not None:
+            out["analytic_force_n"], out["comparison"] = ov
+    return out
+
+
+# Back-compat alias (older callers / tests used this name for the lighter payload).
+lut_to_json = analyze_lut
 
 
 def list_luts(directory: str) -> list[str]:
@@ -337,6 +417,26 @@ def list_luts(directory: str) -> list[str]:
     if not d.exists():
         return []
     return [str(p.relative_to(REPO_ROOT)).replace("\\", "/") for p in sorted(d.rglob("*.npz"))]
+
+
+def qc_directory(directory: str, reluctance: bool = False) -> list[dict[str, Any]]:
+    """Batch quality-control every LUT in a directory -- triage a whole sweep at a glance:
+    per table, the verdict, peak force, and which checks (if any) failed."""
+    from ..fem.lut import ForceLUT
+    from ..fem.quality import check_lut
+
+    rows: list[dict[str, Any]] = []
+    for rel in list_luts(directory):
+        row: dict[str, Any] = {"path": rel, "name": Path(rel).name}
+        try:
+            lut = ForceLUT.load(_safe_path(rel))
+            rep = check_lut(lut, expect_linear_current=not reluctance, label=Path(rel).name)
+            row.update(ok=rep.ok, peak_force_n=rep.peak_force_n,
+                       failed=[c.name for c in rep.failures()])
+        except Exception as exc:                        # a corrupt/unreadable table is itself a finding
+            row.update(ok=False, error=str(exc), failed=["load"])
+        rows.append(row)
+    return rows
 
 
 def optimizer_latest() -> dict[str, Any] | None:
@@ -418,7 +518,11 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/api/luts":
                 self._json({"luts": list_luts(q.get("dir", "build/gui/fem_lut"))})
             elif route == "/api/lut":
-                self._json(lut_to_json(q["path"], reluctance=q.get("reluctance") == "1"))
+                self._json(analyze_lut(q["path"], reluctance=q.get("reluctance") == "1",
+                                       compare=q.get("compare", "1") != "0"))
+            elif route == "/api/qcdir":
+                self._json({"rows": qc_directory(q.get("dir", "build/gui/fem_lut"),
+                                                 reluctance=q.get("reluctance") == "1")})
             elif route == "/api/optimizer":
                 self._json({"latest": optimizer_latest()})
             else:
