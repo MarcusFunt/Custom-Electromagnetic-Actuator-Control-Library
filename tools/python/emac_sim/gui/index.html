@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMAC control lab</title>
+<style>
+:root{
+  --bg:#f7f8fa; --panel:#fff; --panel2:#f1f3f6; --ink:#1c2530; --mut:#667085; --line:#e4e7ec;
+  --accent:#4C72B0; --blue:#4C72B0; --orange:#DD8452; --green:#55A868; --red:#C44E52; --purple:#8172B3;
+  --ok:#2f9e5f; --bad:#C44E52; --consolebg:#0e1116; --consoleink:#d6dde6;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1216; --panel:#171b21; --panel2:#1e242c; --ink:#e6eaf0; --mut:#94a0b0; --line:#2b313c;
+  --consolebg:#0a0d11; --consoleink:#cfd7e0;
+}}
+:root[data-theme="light"]{--bg:#f7f8fa;--panel:#fff;--panel2:#f1f3f6;--ink:#1c2530;--mut:#667085;--line:#e4e7ec;--consolebg:#0e1116;--consoleink:#d6dde6;}
+:root[data-theme="dark"]{--bg:#0f1216;--panel:#171b21;--panel2:#1e242c;--ink:#e6eaf0;--mut:#94a0b0;--line:#2b313c;--consolebg:#0a0d11;--consoleink:#cfd7e0;}
+*{box-sizing:border-box}
+body{margin:0;font:13.5px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+header h1{margin:0;font-size:15px;letter-spacing:.01em}
+header .sub{color:var(--mut);font-size:11.5px}
+.badge{font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid var(--line);color:var(--mut)}
+.badge.on{background:rgba(85,168,104,.16);border-color:var(--green);color:var(--green)}
+.badge.off{background:rgba(196,78,82,.12);border-color:var(--red);color:var(--red)}
+.spacer{flex:1}
+.themebtn{cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--mut);border-radius:7px;padding:4px 9px;font-size:12px}
+.layout{display:flex;min-height:calc(100vh - 51px)}
+nav{flex:0 0 190px;border-right:1px solid var(--line);background:var(--panel);padding:12px 10px}
+nav button{display:flex;gap:9px;align-items:center;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);
+  padding:9px 11px;border-radius:8px;cursor:pointer;font:inherit;margin-bottom:3px}
+nav button:hover{background:var(--panel2)}
+nav button.on{background:var(--accent);color:#fff}
+nav .ic{font-size:15px;width:18px;text-align:center}
+nav .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:14px 6px 6px}
+main{flex:1;min-width:0;padding:18px 22px;max-width:1180px}
+h2.view{margin:0 0 3px;font-size:17px}
+p.lede{margin:0 0 16px;color:var(--mut);font-size:12.5px;max-width:70ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:16px}
+.card h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.col{flex:1;min-width:280px}
+label.f{display:block;margin-bottom:11px}
+label.f > span{display:block;font-size:11.5px;color:var(--mut);margin-bottom:4px}
+label.f .hint{color:var(--mut);font-weight:400;font-size:10.5px}
+input,select{font:inherit;width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink)}
+input[type=checkbox]{width:auto}
+.inline{display:flex;align-items:center;gap:8px}
+button.act{font:inherit;font-weight:600;padding:8px 15px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+button.act:hover{filter:brightness(1.07)}
+button.act.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-weight:500}
+button.act.warn{background:var(--red)}
+button.act:disabled{opacity:.5;cursor:not-allowed}
+.btnrow{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.console{background:var(--consolebg);color:var(--consoleink);border-radius:9px;padding:12px 13px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;
+  white-space:pre-wrap;word-break:break-word;height:340px;overflow:auto;border:1px solid var(--line)}
+.statuspill{font-size:11px;padding:2px 9px;border-radius:12px;border:1px solid var(--line);color:var(--mut)}
+.statuspill.running{color:var(--blue);border-color:var(--blue)}
+.statuspill.done{color:var(--green);border-color:var(--green)}
+.statuspill.failed,.statuspill.stopped{color:var(--red);border-color:var(--red)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.tile .v{font-size:21px;font-weight:700}.tile .l{color:var(--mut);font-size:11px;margin-top:2px}
+.muted{color:var(--mut)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11.5px;padding:4px 11px;border:1px solid var(--line);border-radius:20px;cursor:pointer;background:var(--panel2);color:var(--mut)}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dot.ok{background:var(--green)}.dot.bad{background:var(--red)}.dot.skip{background:var(--mut);opacity:.5}
+svg text{fill:var(--mut);font-size:10px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;margin-top:6px}
+.legend span{display:inline-flex;align-items:center;gap:5px;color:var(--mut)}
+.legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.err{color:var(--red);font-size:12px;margin-top:8px}
+.hidden{display:none}
+select.lut{max-width:100%}
+.small{font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>EMAC control lab</h1>
+  <span class="sub" id="cwd"></span>
+  <span class="spacer"></span>
+  <span class="badge" id="femmBadge">FEMM …</span>
+  <button class="themebtn" id="themeBtn">◐ theme</button>
+</header>
+
+<div class="layout">
+  <nav>
+    <div class="grp">Do</div>
+    <button data-view="run" class="on"><span class="ic">▶</span> Run a tool</button>
+    <button data-view="sweep"><span class="ic">📈</span> Sweep &amp; estimate</button>
+    <div class="grp">See</div>
+    <button data-view="visualize"><span class="ic">🔬</span> Visualize LUTs</button>
+    <button data-view="optimizer"><span class="ic">🏁</span> Optimizer run</button>
+  </nav>
+
+  <main>
+    <!-- RUN -->
+    <section id="view-run">
+      <h2 class="view">Run a tool</h2>
+      <p class="lede">Pick a command, set its options, and run it. Output streams live below —
+        the same as running it in a terminal, but with the results wired into this app.</p>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label class="f"><span>Command</span>
+              <select id="cmdSel"></select></label>
+            <p class="muted small" id="cmdHelp"></p>
+          </div>
+          <div class="col" id="cmdArgs"></div>
+        </div>
+        <div class="btnrow" style="margin-top:6px">
+          <button class="act" id="runBtn">Run</button>
+          <button class="act warn hidden" id="stopBtn">Stop</button>
+          <span class="statuspill" id="runStatus">idle</span>
+          <span class="muted small" id="runElapsed"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Output</h3>
+        <div class="console" id="runConsole"></div>
+      </div>
+    </section>
+
+    <!-- SWEEP -->
+    <section id="view-sweep" class="hidden">
+      <h2 class="view">Sweep &amp; estimate</h2>
+      <p class="lede">Configure a FEM force-table sweep — how big and how detailed — get a
+        wall-clock estimate before you commit, then start it and watch progress.</p>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label class="f"><span>Config</span><select id="swConfig"></select></label>
+            <label class="f"><span>Backend</span>
+              <select id="swBackend">
+                <option value="reference">reference — analytic, fast, no FEMM</option>
+                <option value="femm">femm — real field solve (slow, accurate)</option>
+              </select></label>
+            <label class="f"><span>Output directory</span>
+              <input id="swOutdir" value="build/gui/fem_lut"></label>
+          </div>
+          <div class="col">
+            <label class="f"><span>Sweep size &amp; detail</span></label>
+            <div class="chips" id="swPreset" style="margin-bottom:12px">
+              <span class="chip" data-off="21" data-cur="7">Coarse</span>
+              <span class="chip on" data-off="41" data-cur="11">Medium</span>
+              <span class="chip" data-off="81" data-cur="15">Fine</span>
+              <span class="chip" data-off="121" data-cur="21">Very fine</span>
+            </div>
+            <div class="row">
+              <label class="f" style="flex:1"><span>Offset points <span class="hint">(detail along position)</span></span>
+                <input id="swOffsets" type="number" value="41" min="3"></label>
+              <label class="f" style="flex:1"><span>Current points</span>
+                <input id="swCurrents" type="number" value="11" min="2"></label>
+            </div>
+            <div class="row">
+              <label class="f" style="flex:1"><span>Geometry cells <span class="hint">(for a study)</span></span>
+                <input id="swGeoms" type="number" value="1" min="1"></label>
+              <label class="f" style="flex:1" id="swMeshWrap"><span>FEMM mesh factor <span class="hint">(smaller = finer)</span></span>
+                <input id="swMesh" type="number" value="1.0" step="0.1" min="0.1"></label>
+            </div>
+          </div>
+        </div>
+        <div class="btnrow">
+          <button class="act sec" id="estBtn">Estimate time</button>
+          <button class="act" id="sweepBtn">Start sweep</button>
+          <button class="act warn hidden" id="sweepStopBtn">Stop</button>
+          <button class="act sec hidden" id="qcBtn">QC results</button>
+          <span class="statuspill" id="sweepStatus">idle</span>
+        </div>
+        <div id="estOut" class="hidden" style="margin-top:14px">
+          <div class="tiles">
+            <div class="tile"><div class="v" id="estSolves">–</div><div class="l">solves</div></div>
+            <div class="tile"><div class="v" id="estPer">–</div><div class="l">sec / solve</div></div>
+            <div class="tile"><div class="v" id="estTime">–</div><div class="l">estimated total</div></div>
+          </div>
+          <p class="muted small" id="estNote" style="margin:8px 2px 0"></p>
+        </div>
+        <div class="err hidden" id="estErr"></div>
+      </div>
+      <div class="card">
+        <h3>Output</h3>
+        <div class="console" id="sweepConsole"></div>
+      </div>
+    </section>
+
+    <!-- VISUALIZE -->
+    <section id="view-visualize" class="hidden">
+      <h2 class="view">Visualize force LUTs</h2>
+      <p class="lede">Load the force tables a sweep produced and inspect the coupling curves,
+        plus an automatic physical-sanity verdict for each table.</p>
+      <div class="card">
+        <div class="btnrow">
+          <label class="f" style="flex:1;margin:0"><span>LUT directory</span>
+            <input id="lutDir" value="build/gui/fem_lut"></label>
+          <button class="act sec" id="lutLoadBtn" style="align-self:flex-end">Load</button>
+        </div>
+        <div style="margin-top:12px" class="inline">
+          <select id="lutSel" class="lut" style="max-width:520px"></select>
+          <span class="muted small" id="lutCount"></span>
+        </div>
+      </div>
+      <div class="card hidden" id="lutCard">
+        <h3>Force vs. slug offset</h3>
+        <div id="lutChart"></div>
+        <div class="legend" id="lutLegend"></div>
+        <div style="margin-top:16px">
+          <h3>Quality control <span id="qcVerdict"></span></h3>
+          <table id="qcTable"></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- OPTIMIZER -->
+    <section id="view-optimizer" class="hidden">
+      <h2 class="view">Optimizer run</h2>
+      <p class="lede">Live snapshot of a design search (written to
+        <code>build/optimize_results/latest.json</code> by an optimizer run). Reload to update.</p>
+      <div class="card">
+        <div class="btnrow"><button class="act sec" id="optReload">Reload snapshot</button>
+          <span class="muted small" id="optWhen"></span></div>
+        <div id="optBody" style="margin-top:14px"><p class="muted">No snapshot found yet.</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const SERIES_COLORS = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3","#937860"];
+let STATE = null;
+
+const $ = s => document.querySelector(s);
+const el = (t, a={}, kids=[]) => { const e=document.createElement(t);
+  for(const k in a){ if(k==="class")e.className=a[k]; else if(k==="html")e.innerHTML=a[k]; else e.setAttribute(k,a[k]); }
+  (Array.isArray(kids)?kids:[kids]).forEach(c=>e.appendChild(typeof c==="string"?document.createTextNode(c):c)); return e; };
+async function api(path, opts){ const r=await fetch(path,opts); const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||("HTTP "+r.status)); return j; }
+function fmtTime(s){ if(s<90) return s.toFixed(1)+" s"; if(s<5400) return (s/60).toFixed(1)+" min"; return (s/3600).toFixed(2)+" h"; }
+
+// ---- theme ----
+$("#themeBtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur==="dark" ? "light" : cur==="light" ? "dark" : (matchMedia("(prefers-color-scheme:dark)").matches?"light":"dark");
+  document.documentElement.setAttribute("data-theme", next);
+};
+
+// ---- nav ----
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");
+  ["run","sweep","visualize","optimizer"].forEach(v=>$("#view-"+v).classList.toggle("hidden", v!==b.dataset.view));
+  if(b.dataset.view==="optimizer") loadOptimizer();
+});
+
+// ---- shared job console ----
+async function streamJob(jobId, consoleEl, statusEl, onDone, elapsedEl){
+  let since=0;
+  consoleEl.textContent="";
+  const tick = async () => {
+    let snap;
+    try { snap = await api(`/api/job?id=${jobId}&since=${since}`); }
+    catch(e){ statusEl.textContent="error"; return; }
+    if(snap.lines.length){ consoleEl.textContent += snap.lines.join("\n")+"\n"; consoleEl.scrollTop=consoleEl.scrollHeight; since=snap.next; }
+    statusEl.className="statuspill "+snap.status;
+    statusEl.textContent = snap.status==="running" ? "running…" : snap.status + (snap.returncode!=null?` (exit ${snap.returncode})`:"");
+    if(elapsedEl) elapsedEl.textContent = snap.elapsed_s+" s";
+    if(snap.status==="running"){ setTimeout(tick, 500); }
+    else if(onDone){ onDone(snap); }
+  };
+  tick();
+}
+
+// ---- RUN tab ----
+function argField(a){
+  const id = "arg_"+a.name;
+  const hint = a.help ? ` <span class="hint">${a.help}</span>` : "";
+  const lab = (inner)=>el("label",{class:"f"},[el("span",{html:a.name.replace(/_/g," ")+hint}), inner]);
+  if(a.type==="bool"){ const c=el("input",{type:"checkbox",id}); if(a.default)c.checked=true;
+    return el("label",{class:"f inline"},[c, el("span",{html:" "+a.name.replace(/_/g," ")+hint})]); }
+  if(a.type==="config"){ const s=el("select",{id}); (STATE.configs||[]).forEach(c=>s.appendChild(el("option",{value:c},c))); return lab(s); }
+  if(a.type==="choice"){ const s=el("select",{id}); a.choices.forEach(c=>{const o=el("option",{value:c},c); if(c===a.default)o.selected=true; s.appendChild(o);}); return lab(s); }
+  const inp=el("input",{id,type:(a.type==="int"||a.type==="number")?"number":"text"});
+  if(a.default!=null) inp.value=a.default; if(a.type==="int")inp.step="1";
+  return lab(inp);
+}
+function renderCmd(){
+  const cmd = $("#cmdSel").value, spec = STATE.commands[cmd];
+  $("#cmdHelp").textContent = spec.help;
+  const box=$("#cmdArgs"); box.innerHTML="";
+  spec.args.forEach(a=>box.appendChild(argField(a)));
+}
+function collectArgs(spec){
+  const args={};
+  spec.args.forEach(a=>{ const e=document.getElementById("arg_"+a.name); if(!e)return;
+    args[a.name] = a.type==="bool" ? e.checked : (e.value===""?null:(a.type==="int"?parseInt(e.value):a.type==="number"?parseFloat(e.value):e.value)); });
+  return args;
+}
+$("#runBtn").onclick = async () => {
+  const cmd=$("#cmdSel").value, spec=STATE.commands[cmd];
+  try{
+    const {job_id} = await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({cmd, args:collectArgs(spec)})});
+    $("#stopBtn").classList.remove("hidden"); $("#runBtn").disabled=true;
+    $("#stopBtn").onclick=()=>api("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job_id})});
+    streamJob(job_id, $("#runConsole"), $("#runStatus"), ()=>{ $("#runBtn").disabled=false; $("#stopBtn").classList.add("hidden"); }, $("#runElapsed"));
+  }catch(e){ $("#runStatus").textContent="error"; $("#runConsole").textContent=String(e); }
+};
+
+// ---- SWEEP tab ----
+function syncMeshVisibility(){ $("#swMeshWrap").style.display = $("#swBackend").value==="femm" ? "" : "none"; }
+document.querySelectorAll("#swPreset .chip").forEach(c=>c.onclick=()=>{
+  document.querySelectorAll("#swPreset .chip").forEach(x=>x.classList.remove("on")); c.classList.add("on");
+  $("#swOffsets").value=c.dataset.off; $("#swCurrents").value=c.dataset.cur;
+});
+$("#swBackend").onchange=syncMeshVisibility;
+$("#estBtn").onclick = async () => {
+  $("#estErr").classList.add("hidden");
+  $("#estBtn").disabled=true; $("#estBtn").textContent="Estimating…";
+  try{
+    const body={config:$("#swConfig").value, backend:$("#swBackend").value,
+      n_offsets:+$("#swOffsets").value, n_currents:+$("#swCurrents").value,
+      n_geometries:+$("#swGeoms").value, mesh_frac:+$("#swMesh").value};
+    const e=await api("/api/estimate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    $("#estSolves").textContent=e.n_solves.toLocaleString();
+    $("#estPer").textContent=e.seconds_per_solve<0.01?"<0.01":e.seconds_per_solve.toFixed(3);
+    $("#estTime").textContent=fmtTime(e.total_seconds);
+    $("#estNote").textContent=e.note;
+    $("#estOut").classList.remove("hidden");
+  }catch(err){ $("#estErr").textContent=String(err); $("#estErr").classList.remove("hidden"); }
+  $("#estBtn").disabled=false; $("#estBtn").textContent="Estimate time";
+};
+$("#sweepBtn").onclick = async () => {
+  const args={config:$("#swConfig").value, outdir:$("#swOutdir").value, backend:$("#swBackend").value,
+    n_offsets:+$("#swOffsets").value, n_currents:+$("#swCurrents").value};
+  try{
+    const {job_id}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:"femgen",args})});
+    $("#sweepStopBtn").classList.remove("hidden"); $("#sweepBtn").disabled=true; $("#qcBtn").classList.add("hidden");
+    $("#sweepStopBtn").onclick=()=>api("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job_id})});
+    streamJob(job_id, $("#sweepConsole"), $("#sweepStatus"), (snap)=>{
+      $("#sweepBtn").disabled=false; $("#sweepStopBtn").classList.add("hidden");
+      if(snap.status==="done"){ $("#qcBtn").classList.remove("hidden"); $("#lutDir").value=$("#swOutdir").value; }
+    });
+  }catch(e){ $("#sweepStatus").textContent="error"; $("#sweepConsole").textContent=String(e); }
+};
+$("#qcBtn").onclick = async () => {
+  try{
+    const {job_id}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({cmd:"femqc",args:{inputs:$("#swOutdir").value}})});
+    streamJob(job_id, $("#sweepConsole"), $("#sweepStatus"), null);
+  }catch(e){ $("#sweepConsole").textContent=String(e); }
+};
+
+// ---- charts ----
+function lineChart(series, xs, opts={}){
+  const W=680,H=300,ml=54,mr=14,mt=12,mb=34;
+  const xmin=Math.min(...xs), xmax=Math.max(...xs);
+  let ymin=Infinity,ymax=-Infinity; series.forEach(s=>s.ys.forEach(y=>{ if(y<ymin)ymin=y; if(y>ymax)ymax=y; }));
+  if(ymin===ymax){ymin-=1;ymax+=1;} const pad=(ymax-ymin)*0.08; ymin-=pad; ymax+=pad;
+  const sx=x=>ml+(x-xmin)/((xmax-xmin)||1)*(W-ml-mr);
+  const sy=y=>H-mb-(y-ymin)/((ymax-ymin)||1)*(H-mt-mb);
+  const ticks=(a,b,n)=>Array.from({length:n},(_,i)=>a+(b-a)*i/(n-1));
+  let g="";
+  ticks(ymin,ymax,5).forEach(v=>{const y=sy(v); g+=`<line x1="${ml}" y1="${y}" x2="${W-mr}" y2="${y}" stroke="var(--line)"/><text x="${ml-7}" y="${y+3}" text-anchor="end">${v.toFixed(2)}</text>`;});
+  ticks(xmin,xmax,6).forEach(v=>{const x=sx(v); g+=`<line x1="${x}" y1="${mt}" x2="${x}" y2="${H-mb}" stroke="var(--line)" opacity=".5"/><text x="${x}" y="${H-mb+15}" text-anchor="middle">${(v*(opts.xscale||1)).toFixed(opts.xdec??1)}</text>`;});
+  // zero line
+  if(ymin<0&&ymax>0){const y=sy(0); g+=`<line x1="${ml}" y1="${y}" x2="${W-mr}" y2="${y}" stroke="var(--mut)" opacity=".5" stroke-dasharray="3 3"/>`;}
+  series.forEach((s,i)=>{ const c=s.color||SERIES_COLORS[i%SERIES_COLORS.length];
+    const pts=s.ys.map((y,k)=>`${sx(xs[k]).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
+    g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2"/>`; });
+  g+=`<text x="${(ml+W-mr)/2}" y="${H-4}" text-anchor="middle">${opts.xlabel||""}</text>`;
+  g+=`<text x="14" y="${(mt+H-mb)/2}" text-anchor="middle" transform="rotate(-90 14 ${(mt+H-mb)/2})">${opts.ylabel||""}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`;
+}
+
+// ---- VISUALIZE tab ----
+$("#lutLoadBtn").onclick = async () => {
+  try{
+    const {luts}=await api(`/api/luts?dir=${encodeURIComponent($("#lutDir").value)}`);
+    const s=$("#lutSel"); s.innerHTML="";
+    luts.forEach(p=>s.appendChild(el("option",{value:p}, p.split("/").pop())));
+    $("#lutCount").textContent = luts.length ? `${luts.length} table(s)` : "no .npz tables found";
+    if(luts.length) showLut(luts[0]);
+    else $("#lutCard").classList.add("hidden");
+  }catch(e){ $("#lutCount").textContent=String(e); }
+};
+$("#lutSel").onchange = () => showLut($("#lutSel").value);
+async function showLut(path){
+  const d = await api(`/api/lut?path=${encodeURIComponent(path)}`);
+  $("#lutCard").classList.remove("hidden");
+  // one force-vs-offset curve per current column
+  const xs=d.offsets_m, series=[];
+  d.currents_a.forEach((cur,j)=>{ if(Math.abs(cur)<1e-9) return;
+    series.push({name:`${(+cur).toFixed(2)} A`, ys:d.force_n.map(row=>row[j])}); });
+  $("#lutChart").innerHTML = lineChart(series, xs, {xlabel:"offset (mm)", ylabel:"force (N)", xscale:1000, xdec:0});
+  $("#lutLegend").innerHTML = series.map((s,i)=>`<span><i style="background:${SERIES_COLORS[i%SERIES_COLORS.length]}"></i>${s.name}</span>`).join("");
+  const q=d.qc;
+  $("#qcVerdict").innerHTML = q.ok ? `<span class="statuspill done">OK</span>` : `<span class="statuspill failed">SUSPECT</span>`;
+  const rows = q.checks.map(c=>{
+    const dot = !c.applicable ? '<span class="dot skip"></span>' : c.passed ? '<span class="dot ok"></span>' : '<span class="dot bad"></span>';
+    const st = !c.applicable ? "skipped" : c.passed ? "ok" : "FAIL";
+    return `<tr><td>${dot}${c.name}</td><td>${st}</td><td class="muted">${c.detail}</td><td class="muted">${c.applicable?c.value.toFixed(4)+" / "+c.tolerance.toFixed(4):"—"}</td></tr>`;
+  }).join("");
+  $("#qcTable").innerHTML = `<tr><th>check</th><th>result</th><th>detail</th><th>value / tol</th></tr>`+rows;
+}
+
+// ---- OPTIMIZER tab ----
+$("#optReload").onclick = loadOptimizer;
+async function loadOptimizer(){
+  const {latest}=await api("/api/optimizer");
+  const body=$("#optBody");
+  if(!latest){ body.innerHTML='<p class="muted">No snapshot found. Run an optimizer search (an MCP run writes build/optimize_results/latest.json).</p>'; return; }
+  const hist = latest.history || latest.convergence || [];
+  const best = latest.best_knobs || latest.best || {};
+  let html="";
+  const bestSpeed = latest.best_speed_mps ?? latest.best_value ?? (hist.length?Math.max(...hist.map(h=>h.best??h.value??h)):null);
+  html += `<div class="tiles"><div class="tile"><div class="v">${bestSpeed!=null?(+bestSpeed).toFixed(3):"–"}</div><div class="l">best exit speed (m/s)</div></div>`;
+  html += `<div class="tile"><div class="v">${latest.generation ?? hist.length}</div><div class="l">generations</div></div></div>`;
+  if(hist.length){
+    const ys = hist.map(h=>+(h.best??h.value??h)); const xs=ys.map((_,i)=>i);
+    html += `<div style="margin-top:14px">`+lineChart([{name:"best",ys,color:"#55A868"}],xs,{xlabel:"generation",ylabel:"exit speed (m/s)",xdec:0})+`</div>`;
+  }
+  if(Object.keys(best).length){
+    html += `<h3 style="margin-top:16px">Best design</h3><table><tr><th>knob</th><th>value</th></tr>`+
+      Object.entries(best).map(([k,v])=>`<tr><td>${k}</td><td>${typeof v==="number"?(+v).toPrecision(4):v}</td></tr>`).join("")+`</table>`;
+  }
+  body.innerHTML=html;
+  $("#optWhen").textContent = latest.updated || latest.timestamp || "";
+}
+
+// ---- boot ----
+(async ()=>{
+  STATE = await api("/api/state");
+  $("#cwd").textContent = STATE.cwd;
+  const fb=$("#femmBadge"); fb.textContent = STATE.femm_available?"FEMM ready":"FEMM not installed";
+  fb.className = "badge "+(STATE.femm_available?"on":"off");
+  const cs=$("#cmdSel"); Object.entries(STATE.commands).forEach(([k,v])=>cs.appendChild(el("option",{value:k},v.label)));
+  cs.onchange=renderCmd; renderCmd();
+  const sc=$("#swConfig"); (STATE.configs||[]).forEach(c=>sc.appendChild(el("option",{value:c},c)));
+  // default the sweep config to a *_fem.toml if present
+  const femCfg=(STATE.configs||[]).find(c=>c.includes("fem")); if(femCfg) sc.value=femCfg;
+  syncMeshVisibility();
+})();
+</script>
+</body>
+</html>
