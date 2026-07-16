@@ -143,6 +143,45 @@ button.act .bic{display:inline-grid;place-items:center;vertical-align:-3px;margi
 button.act .bic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .empty .big{display:grid;place-items:center}
 .empty .big svg{width:36px;height:36px;fill:none;stroke:var(--mut);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+/* ---- feature styles ---- */
+.progress{height:9px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:12px 0 7px}
+.progress > i{display:block;height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s ease}
+.progmeta{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.progmeta b{color:var(--ink);font-weight:600}
+/* interactive chart */
+.charthost{position:relative}
+.charttip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;font-size:11.5px;line-height:1.5;box-shadow:var(--shadow2);z-index:6;transform:translate(-50%,-114%);
+  white-space:nowrap;opacity:0;transition:opacity .09s}
+.charttip.on{opacity:1}
+.charttip .k{color:var(--mut);margin-bottom:2px}
+.charttip .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+svg .hit{fill:transparent;cursor:crosshair}
+svg .cross{stroke:var(--mut);stroke-width:1;stroke-dasharray:3 3;opacity:0}
+svg .cross.on{opacity:.75}
+svg .pt{opacity:0;transition:opacity .05s}svg .pt.on{opacity:1}
+/* chart toolbar */
+.charthead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.charthead .section-sub{margin:0}
+.xbtn{font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--mut);cursor:pointer;transition:.13s}
+.xbtn:hover{color:var(--ink);border-color:var(--accent)}
+/* toasts */
+#toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:10px;z-index:200;max-width:340px}
+.toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:11px;
+  padding:12px 15px;box-shadow:var(--shadow2);cursor:pointer;animation:tin .22s cubic-bezier(.2,.8,.3,1)}
+.toast.ok{border-left-color:var(--green)}.toast.bad{border-left-color:var(--red)}
+.toast b{display:block;margin-bottom:2px;font-size:13px}.toast .sub{color:var(--mut);font-size:12px}
+@keyframes tin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.kbdhint{font-size:10.5px;color:var(--mut);margin-left:auto;opacity:.7;border:1px solid var(--line);border-radius:5px;padding:0 5px}
+/* responsive: collapse the sidebar to icons on narrow windows */
+@media(max-width:920px){
+  nav{flex:0 0 60px;padding:12px 7px}
+  nav button{justify-content:center;padding:11px 0;gap:0}
+  nav button .lbltxt,nav button .kbdhint{display:none}
+  nav .grp{font-size:0;margin:10px 0;height:1px;background:var(--line)}
+  main{padding:18px 16px}
+  .row .col{min-width:220px}
+}
 </style>
 </head>
 <body>
@@ -159,13 +198,13 @@ button.act .bic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-
 <div class="layout">
   <nav aria-label="Sections">
     <div class="grp">Overview</div>
-    <button data-view="home" class="on"><span class="ic" data-icon="home"></span> Home</button>
+    <button data-view="home" class="on" title="Home (1)"><span class="ic" data-icon="home"></span><span class="lbltxt">Home</span><span class="kbdhint">1</span></button>
     <div class="grp">Do</div>
-    <button data-view="run"><span class="ic" data-icon="play"></span> Run a tool</button>
-    <button data-view="sweep"><span class="ic" data-icon="sweep"></span> Sweep &amp; estimate</button>
+    <button data-view="run" title="Run a tool (2)"><span class="ic" data-icon="play"></span><span class="lbltxt">Run a tool</span><span class="kbdhint">2</span></button>
+    <button data-view="sweep" title="Sweep &amp; estimate (3)"><span class="ic" data-icon="sweep"></span><span class="lbltxt">Sweep &amp; estimate</span><span class="kbdhint">3</span></button>
     <div class="grp">Analyze</div>
-    <button data-view="analyze"><span class="ic" data-icon="analyze"></span> Force tables</button>
-    <button data-view="optimizer"><span class="ic" data-icon="target"></span> Optimizer run</button>
+    <button data-view="analyze" title="Force tables (4)"><span class="ic" data-icon="analyze"></span><span class="lbltxt">Force tables</span><span class="kbdhint">4</span></button>
+    <button data-view="optimizer" title="Optimizer run (5)"><span class="ic" data-icon="target"></span><span class="lbltxt">Optimizer run</span><span class="kbdhint">5</span></button>
   </nav>
 
   <main>
@@ -256,7 +295,12 @@ button.act .bic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-
         </div>
         <div class="err hidden" id="estErr"></div>
       </div>
-      <div class="card"><h3>Output</h3><div class="console" id="sweepConsole"></div>
+      <div class="card"><h3>Output</h3>
+        <div id="sweepProgress" class="hidden">
+          <div class="progress"><i id="sweepBar"></i></div>
+          <div class="progmeta"><span id="sweepProgLeft"><b>0</b> / 0 points</span><span id="sweepProgRight"></span></div>
+        </div>
+        <div class="console" id="sweepConsole" style="margin-top:10px"></div>
         <div class="btnrow hidden" id="sweepDone" style="margin-top:12px">
           <button class="act sec" id="qcBtn">Quality-check output</button>
           <button class="act ghost" id="toAnalyze">Analyze results →</button>
@@ -302,6 +346,7 @@ button.act .bic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-
     </section>
   </main>
 </div>
+<div id="toasts" aria-live="polite"></div>
 
 <script>
 const SERIES_COLORS = ["#4C72B0","#DD8452","#55A868","#C44E52","#8172B3","#4c9aa0"];
@@ -331,9 +376,21 @@ function renderIcons(root=document){root.querySelectorAll("[data-icon]").forEach
 function isDark(){const t=document.documentElement.getAttribute("data-theme");
   return t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches);}
 
+// ---- toasts / persistence / download ----
+function toast(title,sub,kind=""){const wrap=$("#toasts");if(!wrap)return;
+  const t=el("div",{class:"toast "+kind},[el("b",{},title)]);
+  if(sub)t.appendChild(el("div",{class:"sub"},sub));
+  t.onclick=()=>t.remove();wrap.appendChild(t);
+  setTimeout(()=>{t.style.transition="opacity .3s";t.style.opacity="0";setTimeout(()=>t.remove(),300);},5200);}
+const PKEY="emac_gui_v1";
+function loadPrefs(){try{return JSON.parse(localStorage.getItem(PKEY))||{};}catch(e){return {};}}
+function savePref(k,v){const p=loadPrefs();p[k]=v;try{localStorage.setItem(PKEY,JSON.stringify(p));}catch(e){}}
+function download(name,text,mime="text/plain"){const b=new Blob([text],{type:mime}),u=URL.createObjectURL(b);
+  const a=el("a",{href:u,download:name});document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+
 $("#themeBtn").onclick=()=>{const cur=document.documentElement.getAttribute("data-theme");
   const next=cur==="dark"?"light":cur==="light"?"dark":(matchMedia("(prefers-color-scheme:dark)").matches?"light":"dark");
-  document.documentElement.setAttribute("data-theme",next);};
+  document.documentElement.setAttribute("data-theme",next);savePref("theme",next);};
 
 function go(view){
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.view===view));
@@ -345,23 +402,30 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>go(b.dataset.vi
 $("#brandHome").onclick=()=>go("home");
 
 // ---- shared job console ----
-async function streamJob(jobId,consoleEl,statusEl,onDone,elapsedEl){
+async function streamJob(jobId,consoleEl,statusEl,onDone,elapsedEl,onLine){
   let since=0; consoleEl.textContent="";
   const tick=async()=>{let snap;
     try{snap=await api(`/api/job?id=${jobId}&since=${since}`);}catch(e){statusEl.textContent="error";return;}
-    if(snap.lines.length){consoleEl.textContent+=snap.lines.join("\n")+"\n";consoleEl.scrollTop=consoleEl.scrollHeight;since=snap.next;}
+    if(snap.lines.length){consoleEl.textContent+=snap.lines.join("\n")+"\n";consoleEl.scrollTop=consoleEl.scrollHeight;since=snap.next;
+      if(onLine)snap.lines.forEach(onLine);}
     statusEl.className="statuspill "+snap.status;
     statusEl.textContent=snap.status==="running"?"running…":snap.status+(snap.returncode!=null?` (exit ${snap.returncode})`:"");
     if(elapsedEl)elapsedEl.textContent=snap.elapsed_s+" s";
     if(snap.status==="running")setTimeout(tick,500); else if(onDone)onDone(snap);};
   tick();
 }
-function runJob(cmd,args,consoleEl,statusEl,onDone,stopBtn,runBtn,elapsedEl){
+function runJob(cmd,args,consoleEl,statusEl,onDone,stopBtn,runBtn,elapsedEl,onLine){
   return api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd,args})})
     .then(({job_id})=>{
       if(stopBtn){stopBtn.classList.remove("hidden");stopBtn.onclick=()=>api("/api/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job_id})});}
       if(runBtn)runBtn.disabled=true;
-      streamJob(job_id,consoleEl,statusEl,(snap)=>{if(runBtn)runBtn.disabled=false;if(stopBtn)stopBtn.classList.add("hidden");if(onDone)onDone(snap);},elapsedEl);
+      const label=(STATE.commands[cmd]||{}).label||cmd;
+      streamJob(job_id,consoleEl,statusEl,(snap)=>{
+        if(runBtn)runBtn.disabled=false;if(stopBtn)stopBtn.classList.add("hidden");
+        if(snap.status==="done")toast(label+" finished",`exit 0 · ${snap.elapsed_s}s`,"ok");
+        else if(snap.status==="failed")toast(label+" failed",`exit ${snap.returncode} · ${snap.elapsed_s}s`,"bad");
+        else if(snap.status==="stopped")toast(label+" stopped",`after ${snap.elapsed_s}s`,"bad");
+        if(onDone)onDone(snap);},elapsedEl,onLine);
     }).catch(e=>{statusEl.textContent="error";consoleEl.textContent=String(e);});
 }
 
@@ -417,22 +481,35 @@ $("#estBtn").onclick=async()=>{$("#estErr").classList.add("hidden");$("#estBtn")
     $("#estTime").textContent=fmtTime(e.total_seconds);$("#estNote").textContent=e.note;$("#estOut").classList.remove("hidden");
   }catch(err){$("#estErr").textContent=String(err);$("#estErr").classList.remove("hidden");}
   $("#estBtn").disabled=false;$("#estBtn").querySelector(".lbl").textContent="Estimate time";};
-$("#sweepBtn").onclick=()=>{$("#sweepDone").classList.add("hidden");
-  const args={config:$("#swConfig").value,outdir:$("#swOutdir").value,backend:$("#swBackend").value,
-    n_offsets:+$("#swOffsets").value,n_currents:+$("#swCurrents").value};
+function updateSweepProg(p){const done=Math.min(p.total,p.completed*p.perCoil+p.cur);
+  const pct=p.total?Math.min(1,done/p.total):0;$("#sweepBar").style.width=(pct*100).toFixed(1)+"%";
+  $("#sweepProgLeft").innerHTML=`<b>${done.toLocaleString()}</b> / ${p.total.toLocaleString()} points · ${(pct*100).toFixed(0)}%`;
+  const elapsed=(performance.now()-p.t0)/1000,rate=done/Math.max(0.3,elapsed),eta=rate>0&&done>0?(p.total-done)/rate:null;
+  $("#sweepProgRight").textContent=eta&&eta>1?`~${fmtTime(eta)} left`:"";}
+$("#sweepBtn").onclick=async()=>{$("#sweepDone").classList.add("hidden");
+  const cfg=$("#swConfig").value,nOff=+$("#swOffsets").value,nCur=+$("#swCurrents").value;
+  const args={config:cfg,outdir:$("#swOutdir").value,backend:$("#swBackend").value,n_offsets:nOff,n_currents:nCur};
+  savePref("sweep",{config:cfg,backend:args.backend,outdir:args.outdir,nOff,nCur,geoms:+$("#swGeoms").value,mesh:+$("#swMesh").value});
+  let nCoils=1;try{nCoils=(await api(`/api/configinfo?config=${encodeURIComponent(cfg)}`)).n_coils;}catch(e){}
+  const prog={perCoil:nOff*nCur,total:nCoils*nOff*nCur,completed:0,cur:0,t0:performance.now()};
+  $("#sweepProgress").classList.remove("hidden");updateSweepProg(prog);
+  const onLine=(line)=>{let m;
+    if(m=line.match(/(\d+)\s*\/\s*(\d+)\s+points solved/)){prog.cur=+m[1];updateSweepProg(prog);}
+    else if(/wrote .*\.npz/.test(line)){prog.completed=Math.min(nCoils,prog.completed+1);prog.cur=0;updateSweepProg(prog);}};
   runJob("femgen",args,$("#sweepConsole"),$("#sweepStatus"),(snap)=>{
-    if(snap.status==="done"){$("#sweepDone").classList.remove("hidden");$("#lutDir").value=$("#swOutdir").value;}},
-    $("#sweepStopBtn"),$("#sweepBtn"));};
+    if(snap.status==="done"){prog.completed=nCoils;prog.cur=0;updateSweepProg(prog);
+      $("#sweepDone").classList.remove("hidden");$("#lutDir").value=$("#swOutdir").value;}},
+    $("#sweepStopBtn"),$("#sweepBtn"),null,onLine);};
 $("#qcBtn").onclick=()=>runJob("femqc",{inputs:$("#swOutdir").value},$("#sweepConsole"),$("#sweepStatus"),null);
 $("#toAnalyze").onclick=()=>{$("#lutDir").value=$("#swOutdir").value;go("analyze");loadAnalyzeDir();};
 $("#emptyToSweep").onclick=()=>go("sweep");
 
-// ---- charts ----
-function lineChart(series,xs,opts={}){
+// ---- charts (interactive: hover crosshair + tooltip, exportable) ----
+function buildLine(series,xs,opts={}){
   const W=680,H=290,ml=56,mr=16,mt=12,mb=36;
   const xmin=Math.min(...xs),xmax=Math.max(...xs);
   let ymin=Infinity,ymax=-Infinity;series.forEach(s=>s.ys.forEach(y=>{if(y<ymin)ymin=y;if(y>ymax)ymax=y;}));
-  if(ymin===ymax){ymin-=1;ymax+=1;}const pad=(ymax-ymin)*0.08;ymin-=pad;ymax+=pad;
+  if(!isFinite(ymin)){ymin=-1;ymax=1;}if(ymin===ymax){ymin-=1;ymax+=1;}const pad=(ymax-ymin)*0.08;ymin-=pad;ymax+=pad;
   const sx=x=>ml+(x-xmin)/((xmax-xmin)||1)*(W-ml-mr);
   const sy=y=>H-mb-(y-ymin)/((ymax-ymin)||1)*(H-mt-mb);
   const ticks=(a,b,n)=>Array.from({length:n},(_,i)=>a+(b-a)*i/(n-1));
@@ -446,36 +523,78 @@ function lineChart(series,xs,opts={}){
     g+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2"${s.dash?' stroke-dasharray="5 4" opacity=".8"':''}/>`;});
   g+=`<text x="${(ml+W-mr)/2}" y="${H-3}" text-anchor="middle">${opts.xlabel||""}</text>`;
   g+=`<text x="13" y="${(mt+H-mb)/2}" text-anchor="middle" transform="rotate(-90 13 ${(mt+H-mb)/2})">${opts.ylabel||""}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`;
+  g+=`<line class="cross" x1="0" y1="${mt}" x2="0" y2="${H-mb}"/>`;
+  series.forEach((s,i)=>{const c=s.color||SERIES_COLORS[i%SERIES_COLORS.length];g+=`<circle class="pt" r="3.6" fill="${c}" stroke="var(--panel)" stroke-width="1.4"/>`;});
+  g+=`<rect class="hit" x="${ml}" y="${mt}" width="${W-ml-mr}" height="${H-mt-mb}"/>`;
+  return {svg:`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`,W,H,ml,mr,mt,mb,xmin,xmax,sx,sy,series,xs,opts};
+}
+function mountLine(host,series,xs,opts={}){
+  const ch=buildLine(series,xs,opts);host.classList.add("charthost");
+  host.innerHTML=ch.svg+`<div class="charttip"></div>`;
+  const svg=host.querySelector("svg"),tip=host.querySelector(".charttip"),cross=svg.querySelector(".cross"),pts=[...svg.querySelectorAll(".pt")],hit=svg.querySelector(".hit");
+  hit.addEventListener("mousemove",(e)=>{const r=svg.getBoundingClientRect();const vx=(e.clientX-r.left)/r.width*ch.W;
+    const dx=ch.xmin+(Math.max(ch.ml,Math.min(ch.W-ch.mr,vx))-ch.ml)/(ch.W-ch.ml-ch.mr)*(ch.xmax-ch.xmin);
+    let idx=0,best=1e18;xs.forEach((x,k)=>{const dd=Math.abs(x-dx);if(dd<best){best=dd;idx=k;}});
+    const px=ch.sx(xs[idx]);cross.setAttribute("x1",px);cross.setAttribute("x2",px);cross.classList.add("on");
+    pts.forEach((p,i)=>{p.setAttribute("cx",px);p.setAttribute("cy",ch.sy(series[i].ys[idx]));p.classList.add("on");});
+    const xlab=(xs[idx]*(opts.xscale||1)).toFixed(opts.xdec??1);
+    tip.innerHTML=`<div class="k">${opts.xname||"x"}: ${xlab}</div>`+series.map((s,i)=>`<div><span class="sw" style="background:${s.color||SERIES_COLORS[i%SERIES_COLORS.length]}"></span>${s.name}: <b>${fmtNum(s.ys[idx],3)}</b></div>`).join("");
+    const hr=host.getBoundingClientRect();
+    tip.style.left=((px/ch.W)*r.width+(r.left-hr.left))+"px";
+    tip.style.top=((ch.sy(series[0].ys[idx])/ch.H)*r.height+(r.top-hr.top))+"px";tip.classList.add("on");});
+  hit.addEventListener("mouseleave",()=>{cross.classList.remove("on");pts.forEach(p=>p.classList.remove("on"));tip.classList.remove("on");});
 }
 function diverging(v,m){ // -m..m -> blue .. (theme neutral) .. red
   const t=Math.max(-1,Math.min(1,v/(m||1)));
   const lo=[76,114,176],hi=[196,78,82],nz=isDark()?[38,45,58]:[236,240,247];  // clean center, not muddy gray
   const mix=(a,b,f)=>a.map((x,i)=>Math.round(x+(b[i]-x)*f));
   const c=t<0?mix(nz,lo,-t):mix(nz,hi,t);return `rgb(${c[0]},${c[1]},${c[2]})`;}
-function heatmap(offsets,currents,grid,opts={}){
+function buildHeatmap(offsets,currents,grid){
   const W=680,H=300,ml=56,mr=64,mt=14,mb=36;
-  const nx=offsets.length,ny=currents.length;
-  const cw=(W-ml-mr)/nx,ch=(H-mt-mb)/ny;
+  const nx=offsets.length,ny=currents.length,cw=(W-ml-mr)/nx,chh=(H-mt-mb)/ny;
   let m=0;grid.forEach(r=>r.forEach(v=>{if(Math.abs(v)>m)m=Math.abs(v);}));
   let g="";
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const v=grid[i][j];
-    g+=`<rect x="${(ml+i*cw).toFixed(1)}" y="${(mt+(ny-1-j)*ch).toFixed(1)}" width="${cw+0.6}" height="${ch+0.6}" fill="${diverging(v,m)}"/>`;}
-  // axes labels
+    g+=`<rect x="${(ml+i*cw).toFixed(1)}" y="${(mt+(ny-1-j)*chh).toFixed(1)}" width="${cw+0.6}" height="${chh+0.6}" fill="${diverging(v,m)}"/>`;}
   [0,Math.floor(nx/2),nx-1].forEach(i=>{const x=ml+(i+0.5)*cw;g+=`<text x="${x}" y="${H-mb+16}" text-anchor="middle">${(offsets[i]*1000).toFixed(0)}</text>`;});
-  [0,Math.floor(ny/2),ny-1].forEach(j=>{const y=mt+(ny-1-j)*ch+ch/2;g+=`<text x="${ml-8}" y="${y+3}" text-anchor="end">${(+currents[j]).toFixed(1)}</text>`;});
+  [0,Math.floor(ny/2),ny-1].forEach(j=>{const y=mt+(ny-1-j)*chh+chh/2;g+=`<text x="${ml-8}" y="${y+3}" text-anchor="end">${(+currents[j]).toFixed(1)}</text>`;});
   g+=`<text x="${(ml+W-mr)/2}" y="${H-3}" text-anchor="middle">offset (mm)</text>`;
   g+=`<text x="13" y="${(mt+H-mb)/2}" text-anchor="middle" transform="rotate(-90 13 ${(mt+H-mb)/2})">current (A)</text>`;
-  // colorbar
   const cbx=W-mr+18,cbw=12,cbh=H-mt-mb;
   for(let k=0;k<=40;k++){const v=m-2*m*k/40;g+=`<rect x="${cbx}" y="${(mt+cbh*k/40).toFixed(1)}" width="${cbw}" height="${cbh/40+0.6}" fill="${diverging(v,m)}"/>`;}
-  g+=`<text x="${cbx+cbw+3}" y="${mt+6}" >${fmtNum(m,1)}</text><text x="${cbx+cbw+3}" y="${mt+cbh}" >-${fmtNum(m,1)}</text><text x="${cbx+cbw+3}" y="${mt+cbh/2}">0 N</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`;
+  g+=`<text x="${cbx+cbw+3}" y="${mt+6}">${fmtNum(m,1)}</text><text x="${cbx+cbw+3}" y="${mt+cbh}">-${fmtNum(m,1)}</text><text x="${cbx+cbw+3}" y="${mt+cbh/2}">0 N</text>`;
+  g+=`<rect class="hit" x="${ml}" y="${mt}" width="${W-ml-mr}" height="${H-mt-mb}"/>`;
+  return {svg:`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`,W,H,ml,mr,mt,mb,cw,chh,nx,ny,offsets,currents,grid};
 }
+function mountHeatmap(host,offsets,currents,grid){
+  const h=buildHeatmap(offsets,currents,grid);host.classList.add("charthost");
+  host.innerHTML=h.svg+`<div class="charttip"></div>`;
+  const svg=host.querySelector("svg"),tip=host.querySelector(".charttip"),hit=svg.querySelector(".hit");
+  hit.addEventListener("mousemove",(e)=>{const r=svg.getBoundingClientRect();
+    const vx=(e.clientX-r.left)/r.width*h.W,vy=(e.clientY-r.top)/r.height*h.H;
+    let i=Math.max(0,Math.min(h.nx-1,Math.floor((vx-h.ml)/h.cw)));
+    let j=Math.max(0,Math.min(h.ny-1,h.ny-1-Math.floor((vy-h.mt)/h.chh)));
+    tip.innerHTML=`<div class="k">${(offsets[i]*1000).toFixed(1)} mm · ${(+currents[j]).toFixed(2)} A</div><div><b>${fmtNum(grid[i][j],3)} N</b></div>`;
+    const hr=host.getBoundingClientRect();tip.style.left=(e.clientX-hr.left)+"px";tip.style.top=(e.clientY-hr.top-6)+"px";tip.classList.add("on");});
+  hit.addEventListener("mouseleave",()=>tip.classList.remove("on"));
+}
+function exportSvg(svgEl,name){
+  const clone=svgEl.cloneNode(true);clone.querySelectorAll(".hit,.cross,.pt").forEach(e=>e.remove());
+  const cs=getComputedStyle(document.documentElement);let s=new XMLSerializer().serializeToString(clone);
+  ["--line","--mut","--ink","--panel","--accent"].forEach(v=>{s=s.split(`var(${v})`).join(cs.getPropertyValue(v).trim()||"#888");});
+  const ink=cs.getPropertyValue("--ink").trim()||"#222",bg=cs.getPropertyValue("--panel").trim()||"#fff";
+  s=s.replace(/<text /g,`<text fill="${ink}" fill-opacity="0.66" font-size="11" font-family="sans-serif" `);
+  s=s.replace(/(<svg[^>]*>)/,`$1<rect x="0" y="0" width="100%" height="100%" fill="${bg}"/>`);
+  download(name,'<?xml version="1.0" encoding="UTF-8"?>\n'+s,"image/svg+xml");
+}
+function lutCsv(d){const rows=["offset_m,"+d.currents_a.map(c=>"I="+(+c).toFixed(3)+"A_N").join(",")];
+  d.offsets_m.forEach((o,i)=>rows.push([(+o).toFixed(6),...d.force_n[i].map(v=>(+v).toFixed(6))].join(",")));
+  return rows.join("\n");}
 
 // ---- ANALYZE ----
 $("#lutLoadBtn").onclick=loadAnalyzeDir;
 async function loadAnalyzeDir(){
+  savePref("analyzeDir",$("#lutDir").value);
   $("#analyzeBody").innerHTML="";$("#analyzeEmpty").classList.add("hidden");
   let rows;try{rows=(await api(`/api/qcdir?dir=${encodeURIComponent($("#lutDir").value)}`)).rows;}
   catch(e){$("#batchCard").classList.add("hidden");$("#analyzeEmpty").classList.remove("hidden");return;}
@@ -524,18 +643,27 @@ async function showAnalysis(path){
     const stt=!c.applicable?"skipped":c.passed?"ok":"FAIL";
     return `<tr><td>${dot}${c.name}</td><td>${stt}</td><td class="muted">${c.detail}</td><td class="muted">${c.applicable?fmtNum(c.value,4)+" / "+fmtNum(c.tolerance,4):"—"}</td></tr>`;}).join("");
   const cmpLine=cmp?`<p class="muted small" style="margin-top:8px">Compared to the fast analytic model over this grid: max ${(cmp.max_rel_error*100).toFixed(1)}%, mean ${(cmp.mean_rel_error*100).toFixed(1)}% of peak. Source backend: <b>${cmp.backend}</b>.</p>`:"";
+  const name=path.split("/").pop();
   body.innerHTML=`
-    <div class="card"><h3>${path.split("/").pop()} <span class="${q.ok?'statuspill done':'statuspill failed'}" style="margin-left:6px">${q.ok?'OK':'SUSPECT'}</span></h3>
+    <div class="card"><div class="charthead"><h3 style="margin:0">${name} <span class="${q.ok?'statuspill done':'statuspill failed'}" style="margin-left:6px">${q.ok?'OK':'SUSPECT'}</span></h3>
+      <button class="xbtn" id="csvBtn">⤓ Download CSV</button></div>
       <div class="tiles">${tileHtml}</div>${cmpLine}</div>
     <div class="row">
-      <div class="col card"><div class="section-sub">Force vs. slug offset</div><div>${lineChart(fseries,xs,{xlabel:"offset (mm)",ylabel:"force (N)",xscale:1000,xdec:0})}</div><div class="legend">${legendF}</div></div>
-      <div class="col card"><div class="section-sub">Force vs. current (at peak offset)</div><div>${lineChart([fvi],d.currents_a,{xlabel:"current (A)",ylabel:"force (N)",xdec:0})}</div><p class="muted small">A straight line through the origin confirms the PM force is linear in current.</p></div>
+      <div class="col card"><div class="charthead"><div class="section-sub">Force vs. slug offset</div><button class="xbtn" data-svg="foHost" data-name="${name}_force_vs_offset">⤓ SVG</button></div>
+        <div class="charthost" id="foHost"></div><div class="legend">${legendF}</div></div>
+      <div class="col card"><div class="charthead"><div class="section-sub">Force vs. current (at peak offset)</div><button class="xbtn" data-svg="fiHost" data-name="${name}_force_vs_current">⤓ SVG</button></div>
+        <div class="charthost" id="fiHost"></div><p class="muted small">A straight line through the origin confirms the PM force is linear in current.</p></div>
     </div>
-    <div class="card"><div class="section-sub">Force map (offset × current)</div><div>${heatmap(d.offsets_m,d.currents_a,d.force_n)}</div></div>
+    <div class="card"><div class="charthead"><div class="section-sub">Force map (offset × current)</div><button class="xbtn" data-svg="hmHost" data-name="${name}_heatmap">⤓ SVG</button></div><div class="charthost" id="hmHost"></div></div>
     <div class="row">
       <div class="col card"><div class="section-sub">Quality control</div><table><tr><th>check</th><th>result</th><th>detail</th><th>value / tol</th></tr>${qcRows}</table></div>
       <div class="col card"><div class="section-sub">Source geometry</div><table class="metatable">${mdRows||'<tr><td class="muted">no metadata</td></tr>'}</table></div>
     </div>`;
+  mountLine($("#foHost"),fseries,xs,{xlabel:"offset (mm)",ylabel:"force (N)",xscale:1000,xdec:0,xname:"offset (mm)"});
+  mountLine($("#fiHost"),[fvi],d.currents_a,{xlabel:"current (A)",ylabel:"force (N)",xdec:0,xname:"current (A)"});
+  mountHeatmap($("#hmHost"),d.offsets_m,d.currents_a,d.force_n);
+  $("#csvBtn").onclick=()=>download(name.replace(/\.npz$/,"")+".csv",lutCsv(d),"text/csv");
+  body.querySelectorAll("[data-svg]").forEach(b=>b.onclick=()=>{const s=$("#"+b.dataset.svg).querySelector("svg");if(s)exportSvg(s,b.dataset.name+".svg");});
 }
 
 // ---- OPTIMIZER ----
@@ -547,15 +675,25 @@ async function loadOptimizer(){
   const bestSpeed=latest.best_speed_mps??latest.best_value??(hist.length?Math.max(...hist.map(h=>h.best??h.value??h)):null);
   let html=`<div class="tiles"><div class="tile"><div class="v">${bestSpeed!=null?(+bestSpeed).toFixed(3)+' <small>m/s</small>':"–"}</div><div class="l">best exit speed</div></div>`+
     `<div class="tile"><div class="v">${latest.generation??hist.length}</div><div class="l">generations</div></div></div>`;
-  if(hist.length){const ys=hist.map(h=>+(h.best??h.value??h));const xs=ys.map((_,i)=>i);
-    html+=`<div style="margin-top:16px">`+lineChart([{name:"best",ys,color:"#55A868"}],xs,{xlabel:"generation",ylabel:"exit speed (m/s)",xdec:0})+`</div>`;}
+  const ys=hist.length?hist.map(h=>+(h.best??h.value??h)):null;
+  if(ys)html+=`<div class="charthost" id="optChart" style="margin-top:16px"></div>`;
   if(Object.keys(best).length)html+=`<div class="section-sub" style="margin-top:16px">Best design</div><table class="metatable">`+
     Object.entries(best).map(([k,v])=>`<tr><td>${k}</td><td>${typeof v==="number"?(+v).toPrecision(4):v}</td></tr>`).join("")+`</table>`;
   body.innerHTML=html;$("#optWhen").textContent=latest.updated||latest.timestamp||"";
+  if(ys)mountLine($("#optChart"),[{name:"best",ys,color:"#55A868"}],ys.map((_,i)=>i),{xlabel:"generation",ylabel:"exit speed (m/s)",xdec:0,xname:"generation"});
 }
+
+// ---- keyboard nav (1..5 switch views when not typing) ----
+document.addEventListener("keydown",(e)=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName)||""))return;
+  const map={"1":"home","2":"run","3":"sweep","4":"analyze","5":"optimizer"};
+  if(map[e.key])go(map[e.key]);});
 
 // ---- boot ----
 (async()=>{
+  const P=loadPrefs();
+  if(P.theme)document.documentElement.setAttribute("data-theme",P.theme);   // restore theme (pre-render)
   renderIcons();                                       // nav / brand / button icons
   STATE=await api("/api/state");
   const base=(STATE.cwd||"").split(/[\\/]/).filter(Boolean).pop()||STATE.cwd;
@@ -566,6 +704,15 @@ async function loadOptimizer(){
   cs.onchange=renderCmd;renderCmd();
   const sc=$("#swConfig");(STATE.configs||[]).forEach(c=>sc.appendChild(el("option",{value:c},c)));
   const femCfg=(STATE.configs||[]).find(c=>c.includes("fem"));if(femCfg)sc.value=femCfg;
+  // restore last-used inputs
+  const S=P.sweep||{};
+  if(S.config&&[...sc.options].some(o=>o.value===S.config))sc.value=S.config;
+  if(S.backend)$("#swBackend").value=S.backend;
+  if(S.outdir)$("#swOutdir").value=S.outdir;
+  if(S.nOff){$("#swOffsets").value=S.nOff;$("#swCurrents").value=S.nCur;
+    document.querySelectorAll("#swPreset .chip").forEach(c=>c.classList.toggle("on",+c.dataset.off===+S.nOff));}
+  if(S.geoms)$("#swGeoms").value=S.geoms;if(S.mesh)$("#swMesh").value=S.mesh;
+  if(P.analyzeDir)$("#lutDir").value=P.analyzeDir;
   syncMesh();renderHome();
 })();
 </script>

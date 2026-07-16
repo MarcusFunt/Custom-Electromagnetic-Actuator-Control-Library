@@ -238,6 +238,29 @@ def femm_available() -> bool:
         return False
 
 
+def config_info(config: str) -> dict[str, Any]:
+    """A few facts about a linear-stepper config -- the coil count (so the GUI can turn a
+    sweep's streamed 'X/N points solved' lines into an overall progress bar) plus the slug
+    and winding size for a quick spec readout."""
+    from ..config import LinearSimulationConfig, load_config
+    from ..fem.from_config import geometry_from_config
+
+    cfg = load_config(str(_safe_path(config)))
+    if not isinstance(cfg, LinearSimulationConfig):
+        raise ValueError("config_info needs a linear_stepper config")
+    slug, coils = geometry_from_config(cfg)
+    c0 = coils[0]
+    return {
+        "n_coils": len(coils),
+        "turns": int(c0.turns),
+        "coil_length_mm": c0.coil_length_m * 1e3,
+        "radial_thickness_mm": c0.radial_thickness_m * 1e3,
+        "magnet_radius_mm": slug.magnet_radius_m * 1e3,
+        "magnet_length_mm": slug.magnet_length_m * 1e3,
+        "remanence_t": slug.remanence_t,
+    }
+
+
 # FEMM's COM automation is single-threaded and not safe for concurrent instances (see the
 # femm-pyfemm operational notes): serialize every in-process FEMM use behind one lock.
 _FEMM_LOCK = threading.Lock()
@@ -523,6 +546,8 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/api/qcdir":
                 self._json({"rows": qc_directory(q.get("dir", "build/gui/fem_lut"),
                                                  reluctance=q.get("reluctance") == "1")})
+            elif route == "/api/configinfo":
+                self._json(config_info(q["config"]))
             elif route == "/api/optimizer":
                 self._json({"latest": optimizer_latest()})
             else:
