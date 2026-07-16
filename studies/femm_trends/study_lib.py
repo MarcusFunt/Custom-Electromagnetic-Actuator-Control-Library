@@ -49,24 +49,24 @@ V_TGT_FULL_THRUST = od.V_TGT_FULL_THRUST
 
 
 class CorrectedFemmBackend(FemmBackend):
-    """FemmBackend with three bugs fixed (all found empirically -- see the study writeup):
+    """FemmBackend with the force-extraction and meshing/domain corrections applied:
 
-      1. MESH: shipped code passes automesh=1, which makes FEMM ignore its computed mesh
-         size (mesh_size_m is a silent no-op). We pass automesh=0 so the intended mesh
-         (0.15*min(radial_thickness, magnet_radius)) takes effect -- cuts offset-symmetry
-         error on a representative coil from ~3.3% to ~0.6%.
-      2. SIGN: shipped backend's Maxwell-stress force is INVERTED relative to the reference
-         backend and linear_plant.net_force's convention -- a FEMM LUT drives the slug
-         backward, giving 0 exit speed for every design. Verified: negating it makes FEMM
-         agree in sign with the reference backend (and produce working designs). We negate.
-      3. DOMAIN: shipped air half-extent is _AIR_MARGIN_FACTOR*max(coil_len, magnet_len),
-         which does NOT grow with offset -- so far-offset solves (the sweep spans +/-5x the
-         coupling scale, wider than this domain) put the slug on/outside the air boundary
-         and return phantom forces (~0.9 N where the true value is ~0.07 N), corrupting the
-         LUT's clamped tail. We add |offset| to the half-extent so the slug is always
-         enclosed with full margin.
+      1. EXTRACTION (the deep one): force is read as the axial LORENTZ force on the COIL
+         (block integral 12), NOT the weighted Maxwell stress tensor over the magnet block
+         (block integral 19). The stress tensor over a bare permanent-magnet block does not
+         converge under mesh refinement -- it is up to ~2x wrong and sign-flips in the far
+         field, because the magnet's own huge internal B/H dominates the tensor. The coil is
+         linear, non-magnetic, known-J, so int(J x B) over it is mesh-robust and, by Newton's
+         third law, is the force on the slug. This SUBSUMES the earlier "sign is inverted"
+         fix (that was patching a symptom of the wrong quantity). Matches the shipped
+         fem/femm_backend.py fix; validated against AnalyticReferenceBackend to ~1-2%.
+      2. MESH: automesh=0 so the computed mesh size (0.15*min(radial_thickness,
+         magnet_radius)) takes effect instead of being a silent no-op.
+      3. DOMAIN: the air half-extent is set once per LUT big enough to enclose the widest
+         swept offset (the shipped fixed multiple doesn't grow with offset). Far less
+         critical now that force comes from a near-field coil integral, but harmless.
 
-    Body copied verbatim from FemmBackend.solve except those three changes."""
+    Body copied from FemmBackend.solve except those changes."""
 
     def solve(self, coil: CoilWindingGeometry, slug: SlugGeometry,
               offset_m: float, current_a: float):
@@ -128,10 +128,10 @@ class CorrectedFemmBackend(FemmBackend):
         femm.mi_saveas(getattr(self, "_tmp_fem", None) or f"_emac_femstudy_{os.getpid()}.fem")
         femm.mi_analyze(1)
         femm.mi_loadsolution()
-        femm.mo_groupselectblock(_SLUG_GROUP)
-        force_n = femm.mo_blockintegral(19)
+        femm.mo_groupselectblock(_COIL_GROUP)
+        force_n = femm.mo_blockintegral(12)   # axial Lorentz force on the coil (see docstring)
         femm.mo_clearblock()
-        return ForcePoint(force_n=-float(force_n))   # Fix #2: match reference/plant sign
+        return ForcePoint(force_n=float(force_n))   # already in reference/plant sign convention
 
 
 # ---- LUT resolution + FEMM-appropriate sweep geometry -------------------------------
