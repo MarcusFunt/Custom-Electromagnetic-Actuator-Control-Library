@@ -618,6 +618,7 @@ async function showAnalysis(path){
   const body=$("#analyzeBody");body.innerHTML='<div class="card"><p class="muted">Analyzing…</p></div>';
   let d;try{d=await api(`/api/lut?path=${encodeURIComponent(path)}`);}catch(e){body.innerHTML=`<div class="card err">${e}</div>`;return;}
   const st=d.stats,cmp=d.comparison;
+  const slugType=(d.metadata||{}).slug_type||"pm";const isRel=slugType==="reluctance";
   // stat tiles
   const tiles=[["peak thrust",fmtNum(st.peak_force_n,3),"N"],["thrust constant kₐ",fmtNum(st.force_per_amp_n_a,3),"N/A"],
     ["peak offset x_c",fmtNum(st.peak_offset_mm,1),"mm"],["coupling width",fmtNum(st.coupling_width_mm,1),"mm"],
@@ -645,14 +646,14 @@ async function showAnalysis(path){
   const cmpLine=cmp?`<p class="muted small" style="margin-top:8px">Compared to the fast analytic model over this grid: max ${(cmp.max_rel_error*100).toFixed(1)}%, mean ${(cmp.mean_rel_error*100).toFixed(1)}% of peak. Source backend: <b>${cmp.backend}</b>.</p>`:"";
   const name=path.split("/").pop();
   body.innerHTML=`
-    <div class="card"><div class="charthead"><h3 style="margin:0">${name} <span class="${q.ok?'statuspill done':'statuspill failed'}" style="margin-left:6px">${q.ok?'OK':'SUSPECT'}</span></h3>
+    <div class="card"><div class="charthead"><h3 style="margin:0">${name} <span class="statuspill" style="margin-left:6px">${isRel?'reluctance (soft iron)':'PM slug'}</span> <span class="${q.ok?'statuspill done':'statuspill failed'}" style="margin-left:6px">${q.ok?'OK':'SUSPECT'}</span></h3>
       <button class="xbtn" id="csvBtn">⤓ Download CSV</button></div>
       <div class="tiles">${tileHtml}</div>${cmpLine}</div>
     <div class="row">
       <div class="col card"><div class="charthead"><div class="section-sub">Force vs. slug offset</div><button class="xbtn" data-svg="foHost" data-name="${name}_force_vs_offset">⤓ SVG</button></div>
         <div class="charthost" id="foHost"></div><div class="legend">${legendF}</div></div>
       <div class="col card"><div class="charthead"><div class="section-sub">Force vs. current (at peak offset)</div><button class="xbtn" data-svg="fiHost" data-name="${name}_force_vs_current">⤓ SVG</button></div>
-        <div class="charthost" id="fiHost"></div><p class="muted small">A straight line through the origin confirms the PM force is linear in current.</p></div>
+        <div class="charthost" id="fiHost"></div><p class="muted small">${isRel?'Reluctance: force is <b>even</b> in current and rises ~I² then <b>saturates</b> (the soft-iron signature) — not linear.':'A straight line through the origin confirms the PM force is linear in current.'}</p></div>
     </div>
     <div class="card"><div class="charthead"><div class="section-sub">Force map (offset × current)</div><button class="xbtn" data-svg="hmHost" data-name="${name}_heatmap">⤓ SVG</button></div><div class="charthost" id="hmHost"></div></div>
     <div class="row">

@@ -34,7 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "python")
 
 from emac_sim import coil_design
 from emac_sim.fem.femm_backend import (FemmBackend, NDFEB_RELATIVE_PERMEABILITY, MU_0,
-                                       _AIR_MARGIN_FACTOR, _SLUG_GROUP, _COIL_GROUP)
+                                       _AIR_MARGIN_FACTOR, _SLUG_GROUP, _COIL_GROUP,
+                                       _add_slug_material)
 from emac_sim.fem.geometry import (CoilWindingGeometry, SlugGeometry, default_sweep_ranges,
                                    coupling_scale_m, _two_region_grid)
 from emac_sim.fem.lut import ForceLUT
@@ -78,9 +79,7 @@ class CorrectedFemmBackend(FemmBackend):
         mesh = self.mesh_size_m or (0.15 * min(coil.radial_thickness_m, slug.magnet_radius_m))
         femm.mi_getmaterial("Air")
         femm.mi_getmaterial("Copper")
-        femm.mi_addmaterial("NdFeB", NDFEB_RELATIVE_PERMEABILITY, NDFEB_RELATIVE_PERMEABILITY,
-                            slug.remanence_t / (MU_0 * NDFEB_RELATIVE_PERMEABILITY), 0, 0, 0,
-                            0, 1, 0, 0, 0, 0)
+        slug_material, slug_magdir = _add_slug_material(femm, slug)   # NdFeB or nonlinear steel
         outer_r = _AIR_MARGIN_FACTOR * coil.outer_radius_m(slug)
         # Fix #3: the domain must enclose the slug (at z=-offset) with margin. It is set
         # ONCE per LUT (build_femm_lut -> _half_extent_override) big enough for the widest
@@ -109,7 +108,7 @@ class CorrectedFemmBackend(FemmBackend):
         femm.mi_drawline(0, slug_z1, 0, slug_z0)
         femm.mi_addblocklabel(0.5 * slug.magnet_radius_m, -offset_m)
         femm.mi_selectlabel(0.5 * slug.magnet_radius_m, -offset_m)
-        femm.mi_setblockprop("NdFeB", 0, mesh, "<None>", 90, _SLUG_GROUP, 0)   # automesh 1->0
+        femm.mi_setblockprop(slug_material, 0, mesh, "<None>", slug_magdir, _SLUG_GROUP, 0)  # automesh 1->0
         femm.mi_clearselected()
         circuit = "coil"
         femm.mi_addcircprop(circuit, current_a, 1)
@@ -136,12 +135,19 @@ class CorrectedFemmBackend(FemmBackend):
 
 # ---- LUT resolution + FEMM-appropriate sweep geometry -------------------------------
 N_OFFSETS = 35
-N_CURRENTS = 3          # the PM force is LINEAR in current (bare-magnet slug, air-core coils,
+N_CURRENTS = 3          # PM: the force is LINEAR in current (bare-magnet slug, air-core coils,
                         # no saturation; F/i verified constant to 0.2% vs real FEMM) -- so 3
                         # points [-max, 0, +max] reproduce the exact force table by linear
                         # interpolation. Dropping 7->3 is a lossless ~2.3x fewer FEMM solves
                         # per cell (245 -> 105). Offsets stay at 35 (the coupling is NONlinear
                         # in offset, so those points are not redundant).
+N_CURRENTS_RELUCTANCE = 6   # RELUCTANCE: the force is ~i^2 and SATURATES (nonlinear B-H iron),
+                        # so the 3-point linear reduction is invalid -- sample 6 NON-NEGATIVE
+                        # magnitudes [0 .. CURRENT_MAX] and let the LUT interpolate the
+                        # quadratic-then-saturating shape. Force is even in current (reversing
+                        # the coil current doesn't change which way the iron is pulled), and the
+                        # reluctance supervisor only ever commands positive current, so
+                        # non-negative sampling loses nothing.
 CURRENT_MAX_A = 90.0    # LUT current axis span; must exceed every i_max used in the sim sweep
 # The repo default sweeps offsets to 5x the coupling scale (edge force <0.1% of peak) -- but
 # that puts the slug so far from the coil that the FEMM air domain needed to enclose it
@@ -154,27 +160,38 @@ DOMAIN_MARGIN_FACTOR = 3.0    # air beyond the farthest slug position, in part-s
 
 
 def femm_sweep_grid(turns, coil_length_m, radial_thickness_m, magnet_radius_m,
-                    magnet_length_m, remanence_t):
+                    magnet_length_m, remanence_t, slug_type="pm"):
     """(coil, slug, offsets, currents, half_extent) for one geometry -- a FEMM-appropriate
     offset grid (narrower far-span than the repo default) and the fixed air-domain
-    half-extent that encloses the farthest swept offset with margin."""
-    slug = SlugGeometry(magnet_radius_m, magnet_length_m, remanence_t)
+    half-extent that encloses the farthest swept offset with margin.
+
+    The current axis depends on slug_type: PM is linear in current, so 3 symmetric points
+    suffice; a reluctance (soft-iron) slug is ~i^2 and saturates, so it needs several
+    NON-NEGATIVE magnitudes (see N_CURRENTS_RELUCTANCE)."""
+    slug = SlugGeometry(magnet_radius_m, magnet_length_m, remanence_t, slug_type=slug_type)
     coil = CoilWindingGeometry(0.0, turns, coil_length_m, radial_thickness_m)
     scale = coupling_scale_m(coil, slug)
     far = FEMM_FAR_SPAN_FACTOR * scale
     offsets = _two_region_grid(FEMM_FINE_SPAN_FACTOR * scale, far, N_OFFSETS)
-    currents = tuple(-CURRENT_MAX_A + 2.0 * CURRENT_MAX_A * k / (N_CURRENTS - 1)
-                     for k in range(N_CURRENTS))
+    if slug_type == "reluctance":
+        currents = tuple(CURRENT_MAX_A * k / (N_CURRENTS_RELUCTANCE - 1)
+                         for k in range(N_CURRENTS_RELUCTANCE))
+    else:
+        currents = tuple(-CURRENT_MAX_A + 2.0 * CURRENT_MAX_A * k / (N_CURRENTS - 1)
+                         for k in range(N_CURRENTS))
     half_extent = far + 0.5 * magnet_length_m + DOMAIN_MARGIN_FACTOR * max(coil_length_m, magnet_length_m)
     return coil, slug, offsets, currents, half_extent
 
 
 def build_femm_lut(turns, coil_length_m, radial_thickness_m, magnet_radius_m,
-                   magnet_length_m, remanence_t, backend, on_point=None) -> ForceLUT:
+                   magnet_length_m, remanence_t, backend, on_point=None,
+                   slug_type="pm") -> ForceLUT:
     """One real-FEMM force table for a coil/slug geometry (position-independent: the force
-    law depends only on slug-coil offset, so one table serves every coil of this geometry)."""
+    law depends only on slug-coil offset, so one table serves every coil of this geometry).
+    slug_type "pm" (NdFeB, default) or "reluctance" (nonlinear-B-H soft iron)."""
     coil, slug, offsets, currents, half_extent = femm_sweep_grid(
-        turns, coil_length_m, radial_thickness_m, magnet_radius_m, magnet_length_m, remanence_t)
+        turns, coil_length_m, radial_thickness_m, magnet_radius_m, magnet_length_m, remanence_t,
+        slug_type=slug_type)
     backend._half_extent_override = half_extent
     try:
         return sweep_coil(coil, slug, backend, offsets_m=offsets, currents_a=currents,
@@ -203,14 +220,18 @@ def simulate_exit_speed(knobs: od.DesignKnobs, force_law: str, lut: ForceLUT | N
             position_m=k * pitch, turns=knobs.turns, coil_length_m=knobs.coil_length_m,
             radial_thickness_m=knobs.radial_thickness_m, magnet_radius_m=knobs.magnet_radius_m,
             magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
+            slug_type=knobs.slug_type,
         ) for k in range(knobs.n_coils)
     )
-    # Attach the real-FEMM force law to every coil (frozen dataclass -> replace).
+    # Attach the real-FEMM force law to every coil (frozen dataclass -> replace). The winding-
+    # derived Cmag/i_sat/x_c (reluctance) or k_a/x_c (PM) from build_coil_station stay -- the
+    # supervisor sizes pulses from those while the LUT supplies the actual force.
     coils = tuple(dataclasses.replace(c, force_lut=lut) for c in base_coils)
     gate_positions = [-0.5 * pitch] + [(k + 0.5) * pitch for k in range(knobs.n_coils - 1)]
     gates = tuple(GateStation(position_m=x, w_eff=0.002) for x in gate_positions)
     p = LinearActuatorParams(
-        mass_kg=coil_design.magnet_mass_kg(knobs.magnet_radius_m, knobs.magnet_length_m),
+        mass_kg=coil_design.slug_mass_kg(knobs.magnet_radius_m, knobs.magnet_length_m,
+                                         knobs.slug_type),
         coils=coils, gates=gates, current_loop="rl", bus_voltage_v=knobs.bus_voltage_v,
         driver_bipolar=knobs.driver_bipolar, thermal_model=True, ambient_temperature_c=20.0,
     )

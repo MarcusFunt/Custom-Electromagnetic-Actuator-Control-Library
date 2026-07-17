@@ -20,7 +20,8 @@ sign.
 
 from __future__ import annotations
 
-from ..coil_design import winding_averaged_force_per_amp
+from ..coil_design import reluctance_force_model, winding_averaged_force_per_amp, wind_coil
+from ..plant import q_shape
 from .backend import ForcePoint
 from .geometry import CoilWindingGeometry, SlugGeometry
 
@@ -32,6 +33,22 @@ class AnalyticReferenceBackend:
 
     def solve(self, coil: CoilWindingGeometry, slug: SlugGeometry,
               offset_m: float, current_a: float) -> ForcePoint:
+        if slug.is_reluctance:
+            # Soft-iron slug: reluctance force, from coil_design's coarse coenergy model -- the
+            # SAME (Cmag, i_sat, x_c) linear_plant's reluctance branch is built from, so this
+            # LUT and the analytic plant agree by construction (mirrors how the PM branch shares
+            # winding_averaged_force_per_amp). Attract-only toward the coil center and EVEN in
+            # current (reversing the coil current does not change which way the iron is pulled),
+            # saturating past i_sat. q_shape carries the toward-center sign; the i^2/(1+(i/i_sat)^2)
+            # magnitude is >= 0 and even. FEMM (nonlinear B-H) is the accuracy reference for the
+            # real force *shape* -- this is the coarse analytic stand-in.
+            bore_r = coil.bore_radius_m(slug)
+            l_air = wind_coil(coil.turns, coil.coil_length_m, coil.radial_thickness_m, bore_r).inductance_h
+            cmag, i_sat, x_c = reluctance_force_model(
+                l_air, coil.coil_length_m, bore_r, slug.magnet_radius_m, slug.magnet_length_m,
+                coil.turns)
+            mag = cmag * current_a * current_a / (1.0 + (current_a / i_sat) ** 2)
+            return ForcePoint(force_n=q_shape(offset_m, x_c) * mag)
         # Force = current * the winding-averaged force per amp. This is coil_design's shared
         # kernel (winding_averaged_force_per_amp) -- the SAME function build_coil_station /
         # estimate_k_a use for the analytic plant's k_a -- so a swept LUT from this backend

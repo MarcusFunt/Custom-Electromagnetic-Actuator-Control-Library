@@ -77,3 +77,82 @@ Knobs via env vars: `STUDY_BUDGET_S` (wall-clock, default 9 h), `STUDY_WORKERS` 
 serial; pyfemm COM isn't safe for concurrent instances), `STUDY_MAX_CELLS`, `STUDY_SUBDIR`.
 A fresh run writes to `studies/femm_trends/study/results/`, so it will not overwrite the
 canonical `results/` committed here.
+
+## Search for a *fast* design with Bayesian optimization — `bo_search.py` (needs FEMM)
+
+The factorial sweep above spends equal, expensive FEMM budget on hopeless-slow and fast
+designs alike — most of its 972 cells land under ~3 m/s while only a thin tail reaches ~20.
+`bo_search.py` instead **concentrates real-FEMM effort in the fast end of the design space**
+with Bayesian optimization (a Gaussian-process surrogate + Expected-Improvement acquisition,
+via [`scikit-optimize`](https://scikit-optimize.github.io/)), and **warm-starts from whatever
+the sweep has already produced** so that compute is reused, not discarded.
+
+**What it optimizes.** BO searches the **6 expensive geometry knobs** (`turns`,
+`coil_length_m`, `radial_thickness_m`, `magnet_radius_m`, `magnet_length_m`, `remanence_t`)
+over the study's proven FEMM-meshable ranges. Each candidate geometry builds **one** real
+axisymmetric FEMM force LUT (the expensive step — the LUT is position-independent, so it
+depends only on those 6 knobs), then a **cheap inner sweep over the 32 driver/control combos**
+(`bus_voltage_v × driver_bipolar × pump_envelope × i_max_a`, at `n_coils=5`) reuses that one
+LUT to find the best driver. The geometry's score is that best inner value. Objective is
+**exit speed (m/s)** by default (`--objective`, also `energy` = ½·m·v² and `momentum` = m·v).
+
+**Run it** (needs FEMM, and **exclusive** FEMM — see below):
+```
+python bo_search.py --n-calls 250          # ~250 real-FEMM geometry evals; warm-starts from ./study/results
+```
+It writes `bo/bo_eval_log.jsonl` (the source of truth) and a live, GUI-compatible snapshot at
+`build/optimize_results/latest.json`, so **emac-gui → Optimizer** shows the convergence curve
+and best design as it runs. Useful flags: `--objective {speed,energy,momentum}`,
+`--n-coils N`, `--sim-t-end S` (inner-sim horizon; default 3.0 = the study's value, lower is
+faster and only drops sub-~1 m/s designs), `--budget-s` (wall-clock cap), `--no-warm-start`,
+`--warmstart-dir DIR` (repeatable), `--timeout` (hard per-eval seconds).
+
+**Resume.** Just run it again with the same `--outdir` — it replays `bo_eval_log.jsonl` via
+`tell()` to reconstruct the optimizer, then continues toward `--n-calls` (a *total* budget,
+not "N more").
+
+**Warm-start** reads the **corrected** current sweep (`./study/results/`) by default, reducing
+each geometry to its best `force_law="femm"` exit speed over drivers. The legacy committed
+`results/` (pre-fix stress-tensor extraction) is **excluded on purpose** — its objectives are
+distorted and would mislead the surrogate; add it explicitly with `--warmstart-dir results`
+only if you know why you want it.
+
+**Robustness / EXCLUSIVE FEMM.** Concurrent FEMM instances hang (observed, multi-hour), so
+run BO only when no other FEMM is active (i.e. stop the factorial sweep first). Each geometry
+is evaluated in a **subprocess with a hard timeout**: a wedged FEMM COM call (uninterruptible
+in-thread) is killed with the process, `femm.exe` is force-killed, that geometry scores 0, and
+the search moves on. The subprocess runs FEMM from a short cwd (`C:\femmwork\bo`) to dodge the
+Windows MAX_PATH solver hang, same as `run_study.py`.
+
+**Test without FEMM.** `--backend reference` swaps the analytic reference backend in for the
+FEMM LUT (no FEMM, no subprocess) — that path is what `tests/test_bo_search.py` exercises in
+CI. It's for plumbing/tests only, not a substitute for a real solve.
+
+## Reluctance projectiles — `--slug-type reluctance`
+
+Everything above optimizes a **permanent-magnet (PM)** slug (Lorentz force, bipolar drive). The
+coilgun literature is mostly **reluctance** guns — a passive **soft-iron** slug pulled toward
+the coil center (`F ∝ I²·dL/dx`, attract-only, saturating). Pass `--slug-type reluctance` to
+optimize that device class instead:
+
+```
+python bo_search.py --slug-type reluctance --n-calls 50
+```
+
+What changes under the hood (PM stays the default, untouched):
+- **FEMM slug** is nonlinear-B-H steel (`1018 Steel`), not NdFeB — so real saturation (the
+  dominant limiter for reluctance guns) is captured.
+- **Current sampling** is 6 non-negative magnitudes `[0 … 90 A]` (the `∝I²` force isn't linear,
+  so the PM 3-point linear reduction doesn't apply); the force is even in current.
+- **Drive** is effectively unipolar — reluctance can't be repelled, so `driver_bipolar`/the
+  departure-repel kick just don't engage.
+- **Warm-start** only ingests sweep rows of the same `slug_type` (the committed PM sweep won't
+  seed a reluctance run — it starts cold).
+
+The **analytic** reluctance force model (`coil_design.reluctance_force_model`, a coenergy /
+inductance-gradient estimate) is deliberately **coarser** than the PM one — real FEMM is the
+accuracy reference, same posture as the PM analytic model. Elsewhere: `optimize_design
+--slug-type reluctance` (fast analytic search), `emac-femgen --slug-type reluctance` (generate a
+reluctance LUT), and the **GUI** sweep/optimizer forms have a slug-type selector; the Analyze
+tab auto-detects a reluctance table from its LUT metadata (QC stops expecting a linear-in-current
+force, and the force-vs-current chart shows the even/saturating shape).

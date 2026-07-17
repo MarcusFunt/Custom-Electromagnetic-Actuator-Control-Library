@@ -78,6 +78,11 @@ class DesignKnobs:
     magnet_length_m: float
     remanence_t: float
     i_max_a: float
+    # Projectile type: "pm" (permanent-magnet slug, the default) or "reluctance" (soft-iron
+    # slug). A run-level MODE, not a searched dimension -- set once per optimization, not coded
+    # into the design vector `x`. In reluctance mode `remanence_t` is ignored and the force law
+    # is the attract-only reluctance branch (see coil_design.reluctance_force_model).
+    slug_type: str = "pm"
 
 
 @dataclass(frozen=True)
@@ -113,7 +118,7 @@ def _bounds_list(b: Bounds) -> list[tuple[float, float]]:
 _INTEGRALITY = [False, True, True, True, True, False, False, False, False, False, False]
 
 
-def decode(x: Sequence[float]) -> DesignKnobs:
+def decode(x: Sequence[float], slug_type: str = "pm") -> DesignKnobs:
     (bus_voltage_v, driver_bipolar_code, pump_envelope_code, n_coils, turns,
      coil_length_m, radial_thickness_m, magnet_radius_m, magnet_length_m,
      remanence_t, i_max_a) = x
@@ -129,6 +134,7 @@ def decode(x: Sequence[float]) -> DesignKnobs:
         magnet_length_m=float(magnet_length_m),
         remanence_t=float(remanence_t),
         i_max_a=float(i_max_a),
+        slug_type=slug_type,
     )
 
 
@@ -140,7 +146,8 @@ def _fem_reference_coil(position_m: float, knobs: DesignKnobs,
     properties still come from coil_design.wind_coil -- only the force law differs, so a
     force_law="fem_reference" run stays comparable to "analytic" on everything else."""
     slug = SlugGeometry(magnet_radius_m=knobs.magnet_radius_m,
-                         magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t)
+                         magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
+                         slug_type=knobs.slug_type)
     coil_geometry = CoilWindingGeometry(position_m=position_m, turns=knobs.turns,
                                          coil_length_m=knobs.coil_length_m,
                                          radial_thickness_m=knobs.radial_thickness_m)
@@ -151,10 +158,19 @@ def _fem_reference_coil(position_m: float, knobs: DesignKnobs,
                   _coil: CoilWindingGeometry = coil_geometry, _slug: SlugGeometry = slug) -> float:
         return backend.solve(_coil, _slug, offset_m, current_a).force_n
 
+    # Pulse-sizing constants for the supervisor (the force itself comes from force_lut). For a
+    # reluctance slug set Cmag/i_sat/x_c so the reluctance pump is sized (k_a=0); the PM path
+    # keeps CoilStation's default k_a (unchanged existing behavior).
+    extra = {}
+    if knobs.slug_type == "reluctance":
+        cmag, i_sat, x_c = coil_design.reluctance_force_model(
+            winding.inductance_h, knobs.coil_length_m, coil_geometry.bore_radius_m(slug),
+            knobs.magnet_radius_m, knobs.magnet_length_m, knobs.turns)
+        extra = {"Cmag": cmag, "i_sat": i_sat, "x_c": x_c, "k_a": 0.0}
     return CoilStation(position_m=position_m, resistance_ohm=winding.resistance_ohm,
                         inductance_h=winding.inductance_h,
                         thermal_mass_j_per_k=winding.thermal_mass_j_per_k,
-                        force_lut=force_lut)
+                        force_lut=force_lut, **extra)
 
 
 def build_params(knobs: DesignKnobs, force_law: str = "analytic") -> LinearActuatorParams:
@@ -174,6 +190,7 @@ def build_params(knobs: DesignKnobs, force_law: str = "analytic") -> LinearActua
                 position_m=k * pitch, turns=knobs.turns, coil_length_m=knobs.coil_length_m,
                 radial_thickness_m=knobs.radial_thickness_m, magnet_radius_m=knobs.magnet_radius_m,
                 magnet_length_m=knobs.magnet_length_m, remanence_t=knobs.remanence_t,
+                slug_type=knobs.slug_type,
             )
             for k in range(knobs.n_coils)
         )
@@ -183,7 +200,8 @@ def build_params(knobs: DesignKnobs, force_law: str = "analytic") -> LinearActua
     gate_positions = [-0.5 * pitch] + [(k + 0.5) * pitch for k in range(knobs.n_coils - 1)]
     gates = tuple(GateStation(position_m=x, w_eff=0.002) for x in gate_positions)
     return LinearActuatorParams(
-        mass_kg=coil_design.magnet_mass_kg(knobs.magnet_radius_m, knobs.magnet_length_m),
+        mass_kg=coil_design.slug_mass_kg(knobs.magnet_radius_m, knobs.magnet_length_m,
+                                         knobs.slug_type),
         coils=coils, gates=gates,
         current_loop="rl", bus_voltage_v=knobs.bus_voltage_v,
         driver_bipolar=knobs.driver_bipolar,
@@ -218,8 +236,8 @@ def simulate_design(knobs: DesignKnobs, dt: float = 2e-4, t_end: float = 3.0,
 
 
 def _objective(x: Sequence[float], bounds: Bounds, dt: float, t_end: float,
-                force_law: str = "analytic") -> float:
-    knobs = decode(x)
+                force_law: str = "analytic", slug_type: str = "pm") -> float:
+    knobs = decode(x, slug_type=slug_type)
     if knobs.n_coils * knobs.coil_length_m > bounds.max_tube_length_m:
         return 0.0    # infeasible: over the tube-length budget: same as a 0-speed design
     try:
@@ -231,13 +249,13 @@ def _objective(x: Sequence[float], bounds: Bounds, dt: float, t_end: float,
 
 def optimize(bounds: Bounds = Bounds(), maxiter: int = 15, popsize: int = 12,
              seed: int = 0, dt: float = 2e-4, t_end: float = 3.0, workers: int = 1,
-             force_law: str = "analytic"):
+             force_law: str = "analytic", slug_type: str = "pm"):
     result = differential_evolution(
         _objective, bounds=_bounds_list(bounds), integrality=_INTEGRALITY,
-        args=(bounds, dt, t_end, force_law), maxiter=maxiter, popsize=popsize, seed=seed,
+        args=(bounds, dt, t_end, force_law, slug_type), maxiter=maxiter, popsize=popsize, seed=seed,
         polish=False, workers=workers, updating="deferred" if workers != 1 else "immediate",
     )
-    best_knobs = decode(result.x)
+    best_knobs = decode(result.x, slug_type=slug_type)
     # Re-verify at higher fidelity + the supervisor's normal (more patient) bootstrap
     # timeout -- the search itself uses a shorter one and a coarser dt to stay fast.
     best_speed = simulate_design(best_knobs, dt=2e-5, t_end=t_end, bootstrap_timeout_s=0.20,
@@ -260,9 +278,11 @@ def _print_design(knobs: DesignKnobs, speed: float, force_law: str = "analytic")
     print(f"  coil_length_m   = {knobs.coil_length_m:.5f}")
     print(f"  radial_thick_m  = {knobs.radial_thickness_m:.5f}")
     print("slug / magnet:")
+    print(f"  slug_type       = {knobs.slug_type}")
     print(f"  magnet_radius_m = {knobs.magnet_radius_m:.5f}")
     print(f"  magnet_length_m = {knobs.magnet_length_m:.5f}")
-    print(f"  remanence_t     = {knobs.remanence_t:.3f}")
+    if knobs.slug_type == "pm":
+        print(f"  remanence_t     = {knobs.remanence_t:.3f}")
     p = build_params(knobs, force_law=force_law)
     print(f"  slug_mass_kg    = {p.mass_kg:.5f}")
     print(f"  force_law       = {force_law}")
@@ -289,6 +309,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "the synthetic q_shape lobe. 'fem_reference': each coil's real "
                              "coupling shape via fem.reference_backend, evaluated live "
                              "(no LUT file needed) -- see docs/FEM_PIPELINE.md.")
+    parser.add_argument("--slug-type", choices=("pm", "reluctance"), default="pm",
+                        help="'pm' (default): permanent-magnet slug (Lorentz force). "
+                             "'reluctance': passive soft-iron slug (attract-only reluctance "
+                             "force, remanence ignored).")
     return parser
 
 
@@ -296,11 +320,12 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     bounds = Bounds(max_tube_length_m=args.max_tube_length_m)
     print(f"searching: maxiter={args.maxiter} popsize={args.popsize} "
-          f"force_law={args.force_law} "
+          f"force_law={args.force_law} slug_type={args.slug_type} "
           f"(~{args.maxiter * args.popsize * 11} evaluations worst case)")
     best_knobs, best_speed, result = optimize(
         bounds=bounds, maxiter=args.maxiter, popsize=args.popsize, seed=args.seed,
         dt=args.dt, t_end=args.t_end, workers=args.workers, force_law=args.force_law,
+        slug_type=args.slug_type,
     )
     print(f"\nsearch reported {-result.fun:.4f} m/s at low fidelity; "
           f"re-verified at high fidelity: {best_speed:.4f} m/s\n")

@@ -61,6 +61,8 @@ COMMANDS: dict[str, dict] = {
             {"name": "popsize", "flag": "--popsize", "type": "int", "default": 12},
             {"name": "force_law", "flag": "--force-law", "type": "choice",
              "choices": ["analytic", "fem_reference"], "default": "analytic"},
+            {"name": "slug_type", "flag": "--slug-type", "type": "choice",
+             "choices": ["pm", "reluctance"], "default": "pm"},
             {"name": "seed", "flag": "--seed", "type": "int", "default": 0},
         ],
     ),
@@ -72,6 +74,8 @@ COMMANDS: dict[str, dict] = {
             {"name": "outdir", "flag": "--outdir", "type": "text", "default": "build/gui/fem_lut"},
             {"name": "backend", "flag": "--backend", "type": "choice",
              "choices": ["reference", "femm"], "default": "reference"},
+            {"name": "slug_type", "flag": "--slug-type", "type": "choice",
+             "choices": ["pm", "reluctance"], "default": "pm"},
             {"name": "n_offsets", "flag": "--n-offsets", "type": "int", "default": 41},
             {"name": "n_currents", "flag": "--n-currents", "type": "int", "default": 11},
         ],
@@ -255,6 +259,7 @@ def config_info(config: str) -> dict[str, Any]:
         "turns": int(c0.turns),
         "coil_length_mm": c0.coil_length_m * 1e3,
         "radial_thickness_mm": c0.radial_thickness_m * 1e3,
+        "slug_type": slug.slug_type,
         "magnet_radius_mm": slug.magnet_radius_m * 1e3,
         "magnet_length_mm": slug.magnet_length_m * 1e3,
         "remanence_t": slug.remanence_t,
@@ -381,8 +386,11 @@ def _analytic_overlay(metadata, offsets, currents, force):
     coil = CoilWindingGeometry(0.0, int(metadata["turns"]), float(metadata["coil_length_m"]),
                                float(metadata["radial_thickness_m"]),
                                bore_clearance_m=float(metadata.get("bore_clearance_m", 0.0015)))
+    # slug_type from metadata so a reluctance table is compared against the RELUCTANCE analytic
+    # model (not the PM one) -- see fem/reference_backend.AnalyticReferenceBackend.
     slug = SlugGeometry(float(metadata["magnet_radius_m"]), float(metadata["magnet_length_m"]),
-                        float(metadata["remanence_t"]))
+                        float(metadata["remanence_t"]),
+                        slug_type=str(metadata.get("slug_type", "pm")))
     ref = AnalyticReferenceBackend()
     a = np.array([[ref.solve(coil, slug, float(o), float(c)).force_n for c in currents]
                   for o in offsets])
@@ -399,13 +407,16 @@ def _analytic_overlay(metadata, offsets, currents, force):
 def analyze_lut(path: str, reluctance: bool = False, compare: bool = True) -> dict[str, Any]:
     """Full analysis of one saved ForceLUT: the grid, a quality-control verdict, derived
     physical stats, and (when the source geometry is recoverable from metadata) an
-    analytic-model overlay with error metrics."""
+    analytic-model overlay with error metrics. A reluctance table is auto-detected from its
+    metadata slug_type (so the QC check stops expecting a linear-in-current force); the explicit
+    `reluctance` flag still forces it for legacy tables written before slug_type was recorded."""
     import numpy as np
     from ..fem.lut import ForceLUT
     from ..fem.quality import check_lut
 
     lut = ForceLUT.load(_safe_path(path))
-    report = check_lut(lut, expect_linear_current=not reluctance, label=Path(path).name)
+    is_reluctance = reluctance or str(lut.metadata.get("slug_type", "pm")) == "reluctance"
+    report = check_lut(lut, expect_linear_current=not is_reluctance, label=Path(path).name)
     offsets = np.asarray(lut.offsets_m)
     currents = np.asarray(lut.currents_a)
     force = np.asarray(lut.force_n)
@@ -453,8 +464,12 @@ def qc_directory(directory: str, reluctance: bool = False) -> list[dict[str, Any
         row: dict[str, Any] = {"path": rel, "name": Path(rel).name}
         try:
             lut = ForceLUT.load(_safe_path(rel))
-            rep = check_lut(lut, expect_linear_current=not reluctance, label=Path(rel).name)
-            row.update(ok=rep.ok, peak_force_n=rep.peak_force_n,
+            # auto-detect reluctance per-LUT from its metadata (same as analyze_lut), so a mixed
+            # directory triages each table correctly; the `reluctance` flag forces it for all.
+            is_rel = reluctance or str(lut.metadata.get("slug_type", "pm")) == "reluctance"
+            rep = check_lut(lut, expect_linear_current=not is_rel, label=Path(rel).name)
+            row.update(ok=rep.ok, slug_type=str(lut.metadata.get("slug_type", "pm")),
+                       peak_force_n=rep.peak_force_n,
                        failed=[c.name for c in rep.failures()])
         except Exception as exc:                        # a corrupt/unreadable table is itself a finding
             row.update(ok=False, error=str(exc), failed=["load"])

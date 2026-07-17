@@ -13,21 +13,40 @@ import math
 from dataclasses import dataclass
 
 
+SLUG_TYPES = ("pm", "reluctance")
+
+
 @dataclass(frozen=True)
 class SlugGeometry:
-    """The moving permanent-magnet slug. No iron core -- matches this build's default
-    (Cmag=0.0) PM-only slug; see linear_plant.py's module docstring for why the reluctance
-    branch is a separate, currently-off term this pipeline does not (yet) model."""
+    """The moving slug, of one of two kinds (`slug_type`):
+
+      - "pm" (default): a permanent-magnet slug -- a uniformly axially-magnetized cylinder of
+        remanence `remanence_t`, no iron. Force is Lorentz (linear/signed in current), the PM
+        branch of linear_plant.py.
+      - "reluctance": a passive SOFT-IRON slug (no remanence; `remanence_t` is ignored). Force
+        is reluctance -- it is pulled toward the coil center, attract-only, quadratic-with-
+        saturation in current -- the `Cmag`/`i_sat` branch of linear_plant.py. In a FEMM solve
+        the slug block is the nonlinear-B-H `steel_material`; in the analytic path it is
+        coil_design.reluctance_force_model. The same `magnet_radius_m`/`magnet_length_m` are
+        reused as the iron slug's radius/length (a slug is a slug; only its material differs)."""
 
     magnet_radius_m: float
     magnet_length_m: float
-    remanence_t: float                  # NdFeB N42-ish ~1.2-1.3 T is a typical default
+    remanence_t: float                  # NdFeB N42-ish ~1.2-1.3 T (PM only; ignored if reluctance)
+    slug_type: str = "pm"               # "pm" | "reluctance"
+    steel_material: str = "1018 Steel"  # FEMM library nonlinear-B-H material (reluctance only)
 
     def __post_init__(self) -> None:
         if self.magnet_radius_m <= 0.0:
             raise ValueError("magnet_radius_m must be > 0")
         if self.magnet_length_m <= 0.0:
             raise ValueError("magnet_length_m must be > 0")
+        if self.slug_type not in SLUG_TYPES:
+            raise ValueError(f"slug_type must be one of {SLUG_TYPES}, got {self.slug_type!r}")
+
+    @property
+    def is_reluctance(self) -> bool:
+        return self.slug_type == "reluctance"
 
 
 @dataclass(frozen=True)

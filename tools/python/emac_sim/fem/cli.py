@@ -12,6 +12,7 @@ swept table instead of the analytic lobe.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -37,10 +38,13 @@ def _make_backend(name: str) -> FEMBackend:
 def generate_luts(config: LinearSimulationConfig, backend_name: str, outdir: Path,
                    n_offsets: int, n_currents: int, max_current_a: float | None,
                    coil_indices: list[int] | None = None,
-                   report=lambda msg: None) -> dict:
+                   report=lambda msg: None, slug_type: str | None = None) -> dict:
     """Sweep every requested coil and write its LUT + a manifest under `outdir`. Returns
-    the manifest dict (also written to `outdir/manifest.json`)."""
+    the manifest dict (also written to `outdir/manifest.json`). `slug_type`, if given,
+    overrides the config's slug type ("pm" | "reluctance")."""
     slug_geometry, coil_geometries = geometry_from_config(config)
+    if slug_type is not None and slug_type != slug_geometry.slug_type:
+        slug_geometry = dataclasses.replace(slug_geometry, slug_type=slug_type)
     backend = _make_backend(backend_name)
     indices = coil_indices if coil_indices is not None else list(range(len(coil_geometries)))
 
@@ -97,6 +101,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-currents", type=int, default=11, help="grid points along current")
     parser.add_argument("--max-current-a", type=float, default=None,
                          help="sweep currents over +/- this value (default: 6.0 A)")
+    parser.add_argument("--slug-type", choices=["pm", "reluctance"], default=None,
+                         help="override the config's slug type: 'pm' (permanent magnet) or "
+                              "'reluctance' (soft-iron slug, nonlinear-B-H steel in FEMM).")
     parser.add_argument("--quiet", action="store_true", help="suppress progress output")
     return parser
 
@@ -111,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     report = (lambda msg: None) if args.quiet else (lambda msg: print(msg))
     generate_luts(
         config, args.backend, Path(args.outdir), args.n_offsets, args.n_currents,
-        args.max_current_a, coil_indices=args.coils, report=report,
+        args.max_current_a, coil_indices=args.coils, report=report, slug_type=args.slug_type,
     )
     return 0
 
