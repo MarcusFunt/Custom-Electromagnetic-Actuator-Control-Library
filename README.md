@@ -156,11 +156,17 @@ your browser. It unifies what used to be three separate pages into one **EMAC co
 - **Sweep & estimate** -- configure a FEM force-table sweep (how *large*: offset/current/
   geometry counts; how *detailed*: mesh fineness), get a real wall-clock **time estimate**
   before you commit (it times a couple of solves and projects the whole run), then start it
-  and watch progress.
-- **Visualize LUTs** -- load the force tables a sweep produced and inspect the coupling curves,
-  each with an automatic physical-sanity (`emac-femqc`) verdict.
+  and watch a **live progress bar with ETA** as the points solve.
+- **Force tables** -- load a directory of tables, triage the whole batch in one quality-control
+  table, then drill into any table: stat tiles (peak thrust, k_a, x_c, coupling width),
+  **interactive** coupling curves and a force heatmap (hover for exact values), the analytic-
+  vs-FEM overlay, the quality checks, and the source geometry -- with **CSV / SVG export**.
 - **Optimizer run** -- live convergence chart and best-design spec sheet from a running search
   (`build/optimize_results/latest.json`).
+
+Niceties: it **remembers** your last config/directory/theme, raises a **toast** when a
+background job finishes, has **keyboard shortcuts** (`1`-`5` switch views), and collapses to
+an icon rail on narrow windows.
 
 The older standalone pages (`tools/web/optimizer_dashboard.html`, the FEMM-trends
 `studies/femm_trends/dashboard.html`) still open directly in a browser with no server, but

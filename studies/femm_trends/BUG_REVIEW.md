@@ -3,12 +3,12 @@
 > **Later update (physics-simulation-accuracy branch):** a *fourth*, deeper FEMM issue was
 > found after this review — the force was read from the **weighted stress tensor over the
 > magnet block**, which does not converge under mesh refinement (up to ~2× wrong, sign flips
-> in the far field). The shipped `fem/femm_backend.py` now reads the **Lorentz force on the
-> coil** instead and agrees with the analytic reference to ~1–2% (see
-> `docs/VALIDATION.md`). This study's `CorrectedFemmBackend` and its cached dataset still use
-> the old stress-tensor extraction, so absolute force values here should be treated with
-> caution until the sweep is regenerated. The trend *shapes* are likely still indicative;
-> the *magnitudes* are not trustworthy.
+> in the far field). Both the shipped `fem/femm_backend.py` **and** this study's
+> `CorrectedFemmBackend` now read the **Lorentz force on the coil** instead and agree with
+> the analytic reference to ~1–2% (see `docs/VALIDATION.md`). **The committed dataset in
+> `results/` predates this fix** (generated with the old stress-tensor extraction), so its
+> absolute magnitudes are not trustworthy — regenerate with `run_study.py` to get corrected
+> force values. Trend *shapes* are likely still indicative.
 
 Focus: the simulation / physics / FEM core (the linear-stepper path exercised by the FEMM
 study). All three FEMM bugs below were found by *actually running* the real FEMM backend

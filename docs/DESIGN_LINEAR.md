@@ -91,6 +91,20 @@ for the pendulum ("Is the bob a permanent magnet or soft iron?"):
 the reluctance term vanish for every current, not a special code path. `k_a` (the PM
 gain) is a placeholder pending real calibration, like every other constant in this model.
 
+**The reluctance branch is now wired end-to-end as a selectable mode** (`slug_type`,
+default `"pm"`). Setting `slug_type="reluctance"` builds a **soft-iron** slug instead of a
+magnet: `coil_design.reluctance_force_model` derives `Cmag`/`i_sat`/`x_c` from magnetic
+coenergy (`F = ½·i²·dL/dx`, the iron's inductance boost `L_air·(μ_eff−1)·η` over the
+coupling half-width, `i_sat` from where the iron hits `B_sat`), so the plant's reluctance
+term is populated (`k_a=0`). It threads through `optimize_design`, the real-FEMM study
+(`study_lib`/`bo_search`, where the FEMM slug becomes nonlinear-B-H `1018 Steel` and the
+current axis samples non-negative magnitudes since the force is `∝i²` and saturates), the
+`emac-femgen`/`optimize` CLIs, and the GUI. The reluctance force is **attract-only**
+(unipolar — `driver_bipolar` and the departure-repel kick don't engage) and **even in
+current**. The analytic `reluctance_force_model` is a deliberately **coarse** estimate — a
+demag-limited effective permeability, an O(1) coupling-width choice — with **real FEMM as
+the accuracy reference**, exactly the posture the PM analytic `k_a` takes.
+
 **Repel-pumping is now built.** `PulseCmd` carries an explicit `polarity` field
 (`"attract"` default, or `"repel"`, mirroring `docs/DESIGN.md`'s `polarity_t {ATTRACT,
 REPEL, REGEN}`), and `supervisor.current_at()` sign-flips the envelope for `"repel"`.

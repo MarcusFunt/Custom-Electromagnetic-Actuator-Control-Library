@@ -49,6 +49,8 @@ def sweep_coil(coil: CoilWindingGeometry, slug: SlugGeometry, backend: FEMBacken
         "magnet_radius_m": slug.magnet_radius_m,
         "magnet_length_m": slug.magnet_length_m,
         "remanence_t": slug.remanence_t,
+        "slug_type": slug.slug_type,           # "pm" | "reluctance" -- lets every downstream
+        "steel_material": slug.steel_material,  # analyzer/QC/GUI auto-detect a reluctance table
         "backend": type(backend).__name__,
     }
     return ForceLUT(offsets_m=offsets, currents_a=currents, force_n=force, metadata=metadata)

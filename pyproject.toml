@@ -26,6 +26,9 @@ dev = [
 mcp = [
   "mcp>=1.2.0"
 ]
+bo = [
+  "scikit-optimize>=0.9"
+]
 
 [project.scripts]
 emac-phase0 = "emac_sim.cli:main"
@@ -46,6 +49,6 @@ where = ["tools/python"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["tools/python"]
+pythonpath = ["tools/python", "studies/femm_trends"]
 addopts = "-ra"
 asyncio_default_fixture_loop_scope = "function"

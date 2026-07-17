@@ -45,6 +45,28 @@ _SLUG_GROUP = 1
 _COIL_GROUP = 2
 
 
+def _add_slug_material(femm, slug: SlugGeometry) -> tuple[str, float]:
+    """Register the slug's magnetic material in the open FEMM document and return
+    (material_name, magnetization_direction_deg) for its block. Two slug kinds:
+
+      - "pm" (default): a uniformly axially-magnetized NdFeB cylinder -- a LINEAR material of
+        relative permeability ~1.05 with an equivalent coercivity H_c = Br/(mu0*mu_r); magdir
+        90 deg = +z axial magnetization.
+      - "reluctance": a passive soft-iron slug -- FEMM's library `steel_material` (default
+        "1018 Steel"), a NONLINEAR B-H material so real saturation (the dominant limiter for
+        reluctance guns) is captured; magdir 0 (no permanent magnetization). Force extraction
+        (axial Lorentz force on the coil, group _COIL_GROUP) is UNCHANGED: by Newton's third
+        law it equals -(force on the slug) whether the slug is a magnet or induced-magnetized
+        iron, and it stays mesh-robust either way (the coil is linear non-magnetic copper)."""
+    if slug.is_reluctance:
+        femm.mi_getmaterial(slug.steel_material)   # nonlinear B-H curve from FEMM's library
+        return slug.steel_material, 0.0
+    femm.mi_addmaterial("NdFeB", NDFEB_RELATIVE_PERMEABILITY, NDFEB_RELATIVE_PERMEABILITY,
+                        slug.remanence_t / (MU_0 * NDFEB_RELATIVE_PERMEABILITY), 0, 0, 0,
+                        0, 1, 0, 0, 0, 0)
+    return "NdFeB", 90.0
+
+
 class FemmNotAvailableError(RuntimeError):
     """Raised when the optional `femm` Python module (bundled with the FEMM application,
     http://www.femm.info/) can't be imported -- i.e. FEMM isn't installed on this machine."""
@@ -102,9 +124,7 @@ class FemmBackend:
 
         femm.mi_getmaterial("Air")
         femm.mi_getmaterial("Copper")
-        femm.mi_addmaterial("NdFeB", NDFEB_RELATIVE_PERMEABILITY, NDFEB_RELATIVE_PERMEABILITY,
-                             slug.remanence_t / (MU_0 * NDFEB_RELATIVE_PERMEABILITY), 0, 0, 0,
-                             0, 1, 0, 0, 0, 0)
+        slug_material, slug_magdir = _add_slug_material(femm, slug)
 
         outer_r = _AIR_MARGIN_FACTOR * coil.outer_radius_m(slug)
         # The slug is drawn at z=-offset_m, so the air boundary must enclose it with margin
@@ -140,7 +160,7 @@ class FemmBackend:
         # automesh=0: honor the computed `mesh` size. With automesh=1 (the old value) FEMM
         # ignores meshsize entirely, so mesh_size_m was a silent no-op and force noise
         # (Maxwell-stress symmetry error) sat at ~3.3% instead of the ~0.6% this mesh gives.
-        femm.mi_setblockprop("NdFeB", 0, mesh, "<None>", 90, _SLUG_GROUP, 0)
+        femm.mi_setblockprop(slug_material, 0, mesh, "<None>", slug_magdir, _SLUG_GROUP, 0)
         femm.mi_clearselected()
 
         # Coil: fixed at z=0 (the coordinate origin is the coil's own center).

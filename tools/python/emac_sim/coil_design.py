@@ -26,6 +26,9 @@ MU_0 = 4.0e-7 * math.pi                 # H/m, vacuum permeability
 COPPER_RESISTIVITY_20C_OHM_M = 1.68e-8  # ohm*m at 20 C
 COPPER_RESISTIVITY_OHM_M = COPPER_RESISTIVITY_20C_OHM_M   # back-compat alias, 20 C value
 NDFEB_DENSITY_KG_M3 = 7500.0            # typical sintered NdFeB density
+SOFT_IRON_DENSITY_KG_M3 = 7870.0        # low-carbon steel (e.g. 1018) -- the reluctance slug
+STEEL_B_SAT_T = 1.6                     # coarse saturation flux of low-carbon steel (~1.5-2 T);
+                                        # sets where the reluctance force stops growing ~i^2
 COPPER_DENSITY_KG_M3 = 8960.0           # kg/m^3
 COPPER_SPECIFIC_HEAT_J_PER_KG_K = 385.0 # J/(kg*K)
 
@@ -154,6 +157,58 @@ def magnet_mass_kg(magnet_radius_m: float, magnet_length_m: float,
                     density_kg_m3: float = NDFEB_DENSITY_KG_M3) -> float:
     volume_m3 = math.pi * magnet_radius_m * magnet_radius_m * magnet_length_m
     return volume_m3 * density_kg_m3
+
+
+def slug_mass_kg(magnet_radius_m: float, magnet_length_m: float, slug_type: str = "pm") -> float:
+    """Slug mass (kg) by material: NdFeB for a PM slug, low-carbon steel for a reluctance
+    slug. Same solid-cylinder volume either way -- only the density differs (steel is a touch
+    denser than NdFeB, so a reluctance slug of the same size is slightly heavier)."""
+    density = SOFT_IRON_DENSITY_KG_M3 if slug_type == "reluctance" else NDFEB_DENSITY_KG_M3
+    return magnet_mass_kg(magnet_radius_m, magnet_length_m, density_kg_m3=density)
+
+
+def _cylinder_axial_demag_factor(length_m: float, radius_m: float) -> float:
+    """Axial magnetometric demagnetizing factor N_d of a solid cylinder (soft-iron slug), as
+    a COARSE closed form with the correct physical limits: N_d -> 1 for a thin disk
+    (length/diameter -> 0), N_d = 1/3 for a cube-ish/sphere-like slug (length == diameter),
+    and N_d -> 0 for a long rod. N_d = 1/(1 + 2p) with p = length/diameter meets all three
+    (p->0: 1; p=1: 1/3; p->inf: 0) and is monotic in aspect ratio -- enough for a coarse
+    effective-permeability estimate; FEMM is the accuracy reference (see reluctance_force_model)."""
+    p = length_m / (2.0 * radius_m)
+    return 1.0 / (1.0 + 2.0 * p)
+
+
+def reluctance_force_model(l_air_h: float, coil_length_m: float, bore_radius_m: float,
+                            slug_radius_m: float, slug_length_m: float, turns: int,
+                            b_sat_t: float = STEEL_B_SAT_T) -> tuple[float, float, float]:
+    """Coarse analytic reluctance-force model: (Cmag, i_sat, x_c) for a soft-iron slug, so the
+    plant's reluctance branch (linear_plant.f_current = Cmag*i^2/(1+(i/i_sat)^2), peaking at
+    q_shape's +/-x_c) can be built without a magnetostatics solve.
+
+    Physics: the reluctance force is F = 1/2 * i^2 * dL/dx (magnetic coenergy), where L(x) is
+    the coil inductance as the iron slug inserts. The iron raises L by channelling flux:
+      - effective rod permeability mu_eff = 1 + 1/N_d (the mu_r->inf, demag-limited value; a
+        finite slug can't reach its material mu_r -- its own demagnetizing field caps it),
+        N_d = _cylinder_axial_demag_factor.
+      - only the fraction eta = (slug_radius/bore_radius)^2 of the coil's bore flux threads the
+        iron, so the inductance swing between slug-centred and slug-out is dL = L_air*(mu_eff-1)*eta.
+      - that swing happens over the coupling half-width x_c ~ 1/4*(coil_length + slug_length)
+        (the offset where the slug edge straddles the coil edge), so dL/dx|peak ~ dL/x_c and
+        Cmag = 1/2 * dL/dx|peak.
+    Saturation: the iron stops adding flux ~i once B in the iron (~mu_0*mu_eff*N*i/coil_length)
+    reaches b_sat, i.e. i_sat = b_sat*coil_length/(mu_0*mu_eff*turns).
+
+    Every O(1) constant here (the N_d form, the x_c fraction, eta) is a deliberate coarse
+    choice -- this model's job is to give the optimizer/supervisor a sensible force law and
+    pulse sizing; real FEMM (nonlinear B-H) is the accuracy reference, exactly as for the PM
+    analytic model. Expect it to be rougher than the PM one (validated/documented separately)."""
+    mu_eff = 1.0 + 1.0 / _cylinder_axial_demag_factor(slug_length_m, slug_radius_m)
+    eta = min(1.0, (slug_radius_m / bore_radius_m) ** 2)
+    delta_l_h = l_air_h * (mu_eff - 1.0) * eta
+    x_c = 0.25 * (coil_length_m + slug_length_m)
+    cmag = 0.5 * delta_l_h / x_c                     # N/A^2 (peak 1/2 dL/dx)
+    i_sat = b_sat_t * coil_length_m / (MU_0 * mu_eff * turns)
+    return cmag, i_sat, x_c
 
 
 def on_axis_field_cylinder_magnet(z_m: float, magnet_radius_m: float,
@@ -361,15 +416,34 @@ def build_coil_station(position_m: float, turns: int, coil_length_m: float,
                         magnet_length_m: float, remanence_t: float,
                         bore_clearance_m: float = 0.0015,
                         packing_factor: float = 0.8,
-                        temperature_c: float = 20.0) -> CoilStation:
+                        temperature_c: float = 20.0,
+                        slug_type: str = "pm") -> CoilStation:
     """Assemble a full CoilStation from raw physical design knobs. bore_radius is derived
     as magnet_radius + a fixed clearance (not independently free) -- the coil bore has to
-    accommodate the slug, so its size isn't really a separate design decision. Both k_a and
-    x_c (coupling half-width) come from the SAME winding-averaged force-per-amp curve the FEM
-    reference backend traces (winding_averaged_force_per_amp): k_a is its peak magnitude, x_c
-    the offset where that peak sits. Using the winding average (not the single mean-radius
-    point) keeps the analytic plant's peak thrust consistent with a swept FEM/analytic LUT
-    for the same geometry -- they used to disagree by 25-75%."""
+    accommodate the slug, so its size isn't really a separate design decision.
+
+    slug_type="pm" (default): k_a and x_c come from the SAME winding-averaged force-per-amp
+    curve the FEM reference backend traces (winding_averaged_force_per_amp): k_a is its peak
+    magnitude, x_c the offset where that peak sits (Cmag=0, pure PM). Using the winding average
+    (not the single mean-radius point) keeps the analytic plant's peak thrust consistent with a
+    swept FEM/analytic LUT for the same geometry -- they used to disagree by 25-75%.
+
+    slug_type="reluctance": a soft-iron slug -- Cmag/i_sat/x_c come from reluctance_force_model
+    (k_a=0, pure reluctance). The winding's own R/L/thermal are identical either way (it's the
+    same coil); only the coupling to the slug differs."""
+    if slug_type == "reluctance":
+        bore_radius_m = magnet_radius_m + bore_clearance_m
+        winding = wind_coil(turns, coil_length_m, radial_thickness_m, bore_radius_m,
+                            packing_factor=packing_factor, temperature_c=temperature_c)
+        cmag, i_sat, x_c = reluctance_force_model(
+            winding.inductance_h, coil_length_m, bore_radius_m, magnet_radius_m,
+            magnet_length_m, turns)
+        return CoilStation(position_m=position_m, x_c=x_c, Cmag=cmag, i_sat=i_sat, k_a=0.0,
+                           resistance_ohm=winding.resistance_ohm,
+                           inductance_h=winding.inductance_h,
+                           thermal_mass_j_per_k=winding.thermal_mass_j_per_k)
+    if slug_type != "pm":
+        raise ValueError(f"slug_type must be 'pm' or 'reluctance', got {slug_type!r}")
     winding, k_a, x_c = _coil_electromagnetics(
         turns, coil_length_m, radial_thickness_m, magnet_radius_m, magnet_length_m,
         remanence_t, bore_clearance_m, packing_factor, temperature_c)

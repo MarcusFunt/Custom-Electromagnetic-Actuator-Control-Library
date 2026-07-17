@@ -191,6 +191,9 @@ class SlugConfig:
     magnet_radius_m: float = 0.008
     magnet_length_m: float = 0.020
     remanence_t: float = 1.2
+    # "pm" (default): permanent-magnet slug. "reluctance": passive soft-iron slug (attract-only
+    # reluctance force, remanence ignored) -- see fem/geometry.py's SlugGeometry.
+    slug_type: str = "pm"
 
 
 @dataclass(frozen=True)
@@ -424,6 +427,7 @@ def _slug(raw: Any) -> SlugConfig:
         magnet_radius_m=_float(data, "magnet_radius_m", 0.008),
         magnet_length_m=_float(data, "magnet_length_m", 0.020),
         remanence_t=_float(data, "remanence_t", 1.2),
+        slug_type=str(data.get("slug_type", "pm")),
     )
 
 

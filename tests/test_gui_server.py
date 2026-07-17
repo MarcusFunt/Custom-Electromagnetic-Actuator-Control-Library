@@ -120,6 +120,12 @@ def test_list_configs_finds_the_example_configs():
     assert any(c.endswith("linear_stepper_5coil.toml") for c in configs)
 
 
+def test_config_info_reports_coil_count_for_progress_tracking():
+    info = S.config_info("examples/configs/linear_stepper_5coil_fem.toml")
+    assert info["n_coils"] == 5                          # the GUI turns this into a progress bar
+    assert info["turns"] > 0 and info["magnet_radius_mm"] > 0
+
+
 def test_analyze_lut_reports_stats_and_analytic_overlay():
     rel = "build/gui_test/coil.npz"
     _make_lut_file(rel)                                 # metadata carries the source geometry

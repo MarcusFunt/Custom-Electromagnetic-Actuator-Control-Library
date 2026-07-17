@@ -14,6 +14,7 @@ def slug_geometry_from_config(slug: SlugConfig) -> SlugGeometry:
         magnet_radius_m=slug.magnet_radius_m,
         magnet_length_m=slug.magnet_length_m,
         remanence_t=slug.remanence_t,
+        slug_type=slug.slug_type,
     )
 
 
