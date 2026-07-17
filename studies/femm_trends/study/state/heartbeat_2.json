@@ -1,0 +1,16 @@
+{
+  "worker": 2,
+  "cells_done_this_worker": 33,
+  "last_cell_id": 98,
+  "elapsed_h": 18.325,
+  "sec_per_cell": 6561.3,
+  "last_cell_best_femm_mps": 8.167,
+  "qc": {
+    "peak_force_n": 58.8479,
+    "zero_offset_force_frac": 0.0048,
+    "edge_force_frac": 0.0138,
+    "zero_current_max_frac": 0.0,
+    "n_solve_fail": 0
+  },
+  "updated": "2026-07-17 06:40:31"
+}

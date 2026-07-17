@@ -136,7 +136,12 @@ class CorrectedFemmBackend(FemmBackend):
 
 # ---- LUT resolution + FEMM-appropriate sweep geometry -------------------------------
 N_OFFSETS = 35
-N_CURRENTS = 7          # force is ~linear in current (air-core coil, mu_r~1.05) -> few needed
+N_CURRENTS = 3          # the PM force is LINEAR in current (bare-magnet slug, air-core coils,
+                        # no saturation; F/i verified constant to 0.2% vs real FEMM) -- so 3
+                        # points [-max, 0, +max] reproduce the exact force table by linear
+                        # interpolation. Dropping 7->3 is a lossless ~2.3x fewer FEMM solves
+                        # per cell (245 -> 105). Offsets stay at 35 (the coupling is NONlinear
+                        # in offset, so those points are not redundant).
 CURRENT_MAX_A = 90.0    # LUT current axis span; must exceed every i_max used in the sim sweep
 # The repo default sweeps offsets to 5x the coupling scale (edge force <0.1% of peak) -- but
 # that puts the slug so far from the coil that the FEMM air domain needed to enclose it
