@@ -803,6 +803,138 @@ def load_run(run_id: str) -> dict[str, Any]:
     return base
 
 
+# --------------------------------------------------------------------------- candidate animation
+# "When looking at a candidate", the GUI animates that geometry's actual launch: the slug
+# accelerating through the multi-stage tube, coils firing as it passes. The trajectory is a real
+# sim of the geometry driven by the hand-tuned supervisor (deterministic, no trained model needed
+# -- an honest physics playback). force_law="analytic" is instant; "femm" first builds a real
+# FEMM force table for that exact coil/slug so the animation runs on FEMM-accurate physics.
+def _spec_from_params(params: dict, n_coils: int | None = None):
+    """A CoilgunSpec from a candidate's geometry dict, filling any missing knob with the default
+    and clamping n_coils to a sane, cheap-to-simulate range."""
+    from ..rl.geometry import CoilgunSpec
+    base = CoilgunSpec()
+
+    def num(key: str, default: float) -> float:
+        v = params.get(key)
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else float(default)
+
+    nc = int(round(n_coils if n_coils else num("n_coils", base.n_coils)))
+    nc = max(2, min(40, nc))
+    return CoilgunSpec(
+        n_coils=nc, turns=int(round(num("turns", base.turns))),
+        coil_length_m=num("coil_length_m", base.coil_length_m),
+        radial_thickness_m=num("radial_thickness_m", base.radial_thickness_m),
+        magnet_radius_m=num("magnet_radius_m", base.magnet_radius_m),
+        magnet_length_m=num("magnet_length_m", base.magnet_length_m),
+        remanence_t=num("remanence_t", base.remanence_t),
+        bus_voltage_v=num("bus_voltage_v", base.bus_voltage_v),
+        i_max_a=num("i_max_a", base.i_max_a),
+    )
+
+
+def _femm_lut_for_spec(spec, mesh_frac: float | None = None):
+    """Build ONE real-FEMM ForceLUT for this geometry (coarse: 21 offsets × 3 currents -- PM force
+    is linear in current so 3 points are exact). Runs under the FEMM lock with a short cwd so the
+    solver's relative temp files never trip FEMM's MAX_PATH hang (see femm-pyfemm notes)."""
+    import os
+    import tempfile
+
+    import numpy as np
+
+    from ..fem.convergence import femm_backend_factory
+    from ..fem.geometry import CoilWindingGeometry, SlugGeometry
+    from ..fem.sweep import sweep_coil
+
+    coil = CoilWindingGeometry(0.0, spec.turns, spec.coil_length_m, spec.radial_thickness_m,
+                               bore_clearance_m=spec.bore_clearance_m)
+    slug = SlugGeometry(spec.magnet_radius_m, spec.magnet_length_m, spec.remanence_t)
+    mesh = 0.15 * min(spec.radial_thickness_m, spec.magnet_radius_m) * (mesh_frac or 1.0)
+    scale = 1.5 * spec.coil_length_m + 0.5 * spec.magnet_length_m
+    offsets = np.linspace(-3.0 * scale, 3.0 * scale, 21)
+    currents = np.array([-spec.i_max_a, 0.0, spec.i_max_a])
+
+    workdir = Path(tempfile.gettempdir()) / "emac_femm_anim"
+    workdir.mkdir(parents=True, exist_ok=True)
+    with _femm_thread():
+        prev = os.getcwd()
+        backend = femm_backend_factory(mesh)
+        try:
+            os.chdir(workdir)
+            return sweep_coil(coil, slug, backend, offsets_m=offsets, currents_a=currents)
+        finally:
+            os.chdir(prev)
+            try:
+                backend.close()
+            except Exception:
+                pass
+
+
+def simulate_candidate(params: dict, force_law: str = "analytic", n_coils: int | None = None,
+                       mesh_frac: float | None = None, max_frames: int = 200) -> dict[str, Any]:
+    """Simulate one candidate geometry's launch and return an animation-ready payload: the tube
+    layout, per-frame [t, x, v, active-coil, current], and a summary (exit speed, efficiency,
+    flight time)."""
+    from ..linear_estimator import LinearStepperEstimator
+    from ..linear_sim import LinearSimulator
+    from ..linear_supervisor import FAULT, StepperSupervisor
+    from ..rl.geometry import build_params
+
+    spec = _spec_from_params(params, n_coils=n_coils)
+    lut = None
+    if force_law == "femm":
+        if not femm_available():
+            raise ValueError("FEMM is not installed on this machine")
+        lut = _femm_lut_for_spec(spec, mesh_frac=mesh_frac)
+
+    p = build_params(spec, force_lut=lut)
+    est = LinearStepperEstimator([g.position_m for g in p.gates], [g.w_eff for g in p.gates])
+    sup = StepperSupervisor(p, i_max=spec.i_max_a, pm_envelope="square", bootstrap_timeout_s=0.20)
+    dt = 2e-4
+    # sample every tick for a smooth trajectory; the trim + downsample below caps the frame count.
+    sim = LinearSimulator(p, est, sup, dt=dt, sample_every=1)
+    log = sim.run(x0=-0.5 * spec.pitch_m - 0.001, v0=0.0, v_tgt=100.0, t_end=3.0)
+
+    # trim to the launch window: keep up to the slug clearing the last coil (+a short coast),
+    # so the animation isn't padded with a long post-exit coast out to t_end.
+    last_center = (spec.n_coils - 1) * spec.pitch_m
+    exit_x = last_center + 0.5 * spec.coil_length_m + 0.5 * spec.magnet_length_m
+    n = len(log.x)
+    exit_i = next((i for i, x in enumerate(log.x) if x >= exit_x), n - 1)
+    keep = min(n, exit_i + max(3, int(0.06 * (exit_i + 1))))
+    idxs = list(range(keep))
+    if len(idxs) > max_frames:
+        stride = math.ceil(len(idxs) / max_frames)
+        idxs = idxs[::stride]
+        if idxs and idxs[-1] != keep - 1:
+            idxs.append(keep - 1)
+
+    frames = [{"t": log.t[i], "x": log.x[i], "v": log.v[i],
+               "coil": log.active_coil[i], "i": log.active_current[i]} for i in idxs]
+    v_exit = log.gate_v[-1] if log.gate_v else (log.v[keep - 1] if keep else 0.0)
+    ke = 0.5 * p.mass_kg * v_exit * v_exit
+    eff = ke / log.energy_in_j if log.energy_in_j > 1e-9 else 0.0
+    return {
+        "force_law": force_law,
+        "layout": {
+            "n_coils": spec.n_coils, "pitch_m": spec.pitch_m, "coil_length_m": spec.coil_length_m,
+            "coil_positions_m": [k * spec.pitch_m for k in range(spec.n_coils)],
+            "magnet_length_m": spec.magnet_length_m,
+            "gate_positions_m": [g.position_m for g in p.gates],
+            "x_start_m": -0.5 * spec.pitch_m - 0.5 * spec.magnet_length_m,
+            "x_end_m": exit_x + 0.5 * spec.coil_length_m, "i_max_a": spec.i_max_a,
+        },
+        "frames": frames,
+        "summary": {
+            "v_exit": v_exit, "efficiency": eff, "e_in": log.energy_in_j,
+            "flight_ms": (frames[-1]["t"] - frames[0]["t"]) * 1e3 if len(frames) > 1 else 0.0,
+            "peak_i": max((abs(f["i"]) for f in frames), default=0.0),
+            "mass_g": p.mass_kg * 1e3, "faulted": sup.mode == FAULT, "n_frames": len(frames),
+            "tube_mm": spec.tube_length_m * 1e3,
+        },
+    }
+
+
 # --------------------------------------------------------------------------- HTTP handler
 def _json_default(o: Any) -> Any:
     """Coerce numpy scalars/arrays (which leak in from ForceLUT/quality) to native JSON
@@ -907,6 +1039,11 @@ class Handler(BaseHTTPRequestHandler):
                     body["config"], int(body.get("n_offsets", 41)),
                     int(body.get("n_currents", 11)), int(body.get("n_geometries", 1)),
                     body.get("backend", "reference"), body.get("mesh_frac"),
+                ))
+            elif route == "/api/animate":
+                self._json(simulate_candidate(
+                    body.get("params", {}), body.get("force_law", "analytic"),
+                    n_coils=body.get("n_coils"), mesh_frac=body.get("mesh_frac"),
                 ))
             else:
                 self._error(ValueError("not found"), 404)
