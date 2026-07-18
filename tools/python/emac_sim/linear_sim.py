@@ -71,6 +71,10 @@ class LinearSimLog:
     gate_index: List[int] = field(default_factory=list)
     gate_v: List[float] = field(default_factory=list)
     supervisor_mode: List[str] = field(default_factory=list)
+    # Cumulative electrical SOURCE energy drawn from the bus over the run (J), metered only
+    # under current_loop="rl" as sum of v_applied * i * dt across coils/ticks (signed: an
+    # H-bridge regenerating on a hard cut returns energy). 0.0 under "ideal" (no driver model).
+    energy_in_j: float = 0.0
 
 
 class LinearSimulator:
@@ -94,6 +98,7 @@ class LinearSimulator:
         next_gate = 0
         step_idx = 0
         currents = [0.0] * n_coils    # persistent per-coil electrical state under "rl"
+        energy_in_j = 0.0             # cumulative bus source energy (rl only), see LinearSimLog
         # Persistent per-coil winding temperature -- stays pinned at ambient (i.e. this
         # array is created but never advanced past its initial value) unless
         # p.thermal_model is True, so the default behavior is bit-for-bit the old
@@ -123,11 +128,13 @@ class LinearSimulator:
                     # the real loading a fast slug puts on its driver.
                     e_bemf = linear_plant.coil_force_gradient(
                         p.coils[k], x - p.coils[k].position_m, currents[k]) * v
-                    currents[k] = linear_plant.coil_current_step(
+                    i_old = currents[k]
+                    currents[k], v_app = linear_plant.coil_current_step(
                         currents[k], target_k, p.coils[k], p.bus_voltage_v, self.dt,
                         bipolar=p.driver_bipolar, resistance_ohm_override=r_override,
-                        back_emf_v=e_bemf,
+                        back_emf_v=e_bemf, return_voltage=True,
                     )
+                    energy_in_j += v_app * 0.5 * (i_old + currents[k]) * self.dt
             else:
                 currents = [0.0] * n_coils
                 if 0 <= out.coil_index < n_coils:
@@ -199,4 +206,5 @@ class LinearSimulator:
                 log.supervisor_mode.append(sup.mode)
             step_idx += 1
 
+        log.energy_in_j = energy_in_j
         return log

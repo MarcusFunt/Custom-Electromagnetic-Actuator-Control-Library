@@ -241,7 +241,7 @@ def coil_force_gradient(coil: CoilStation, offset: float, current: float) -> flo
 def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
                        bus_voltage_v: float, dt: float, bipolar: bool = False,
                        resistance_ohm_override: float | None = None,
-                       back_emf_v: float = 0.0) -> float:
+                       back_emf_v: float = 0.0, return_voltage: bool = False):
     """Advance one coil's ACTUAL current toward i_target over one control tick, through
     its own RL circuit rather than snapping to the target instantly. Modeled as an
     idealized current-mode PWM controller: solve for the exact CONSTANT voltage that would
@@ -305,6 +305,12 @@ def coil_current_step(i_actual: float, i_target: float, coil: CoilStation,
     i_new = rl_current_step(i_actual, v_applied - back_emf_v, r, l, dt)
     if not bipolar:
         i_new = max(0.0, i_new)   # single half-bridge: diode blocks reverse current
+    # return_voltage exposes the rail-limited driver voltage actually applied this tick, so a
+    # caller can meter SOURCE energy delivered = v_applied * i * dt (used by the RL environment's
+    # efficiency reward). Default False keeps the original scalar-return contract for every
+    # existing caller/test.
+    if return_voltage:
+        return i_new, v_applied
     return i_new
 
 
