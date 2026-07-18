@@ -150,9 +150,19 @@ emac-gui
 `emac-gui` starts a small local web app (stdlib only -- no new dependencies) and opens it in
 your browser. It unifies what used to be three separate pages into one **EMAC control lab**:
 
+- **Runs & results** -- every search and sweep you've run, turned into interactive charts.
+  *Design searches* (the RL hardware BO, the FEMM Bayesian optimizations) show the
+  **speed↔efficiency scatter** with the Pareto-optimal set highlighted, a **convergence** curve,
+  and per-parameter exploration plots; *frontiers* (the RL λ-sweeps) plot speed vs efficiency with
+  an optional **reluctance-literature overlay**; the *factorial sweep* shows the
+  **analytic-vs-FEMM agreement** and a switchable design-trend chart. Every run has a
+  **Reproduce** button that pre-fills the Run tab (scoped small for a fast re-validation) so you
+  can re-run it to confirm the result -- all points hover for the exact geometry, and export to
+  CSV/SVG.
 - **Run a tool** -- pick any command (`emac-sim`, `emac-optimize`, `emac-femgen`, `emac-femqc`,
-  `emac-femcheck`), set its options in a form, run it, and watch its output stream live -- the
-  same as a terminal, but wired into the app.
+  `emac-femcheck`, `emac-rl-train`, the hardware BO×RL search, or the FEMM studies), set its
+  options in a form, run it, and watch its output stream live -- the same as a terminal, but
+  wired into the app.
 - **Sweep & estimate** -- configure a FEM force-table sweep (how *large*: offset/current/
   geometry counts; how *detailed*: mesh fineness), get a real wall-clock **time estimate**
   before you commit (it times a couple of solves and projects the whole run), then start it
@@ -165,12 +175,13 @@ your browser. It unifies what used to be three separate pages into one **EMAC co
   (`build/optimize_results/latest.json`).
 
 Niceties: it **remembers** your last config/directory/theme, raises a **toast** when a
-background job finishes, has **keyboard shortcuts** (`1`-`5` switch views), and collapses to
+background job finishes, has **keyboard shortcuts** (`1`-`6` switch views), and collapses to
 an icon rail on narrow windows.
 
 The older standalone pages (`tools/web/optimizer_dashboard.html`, the FEMM-trends
 `studies/femm_trends/dashboard.html`) still open directly in a browser with no server, but
-`emac-gui` supersedes them for interactive use -- it's the one that can also *run* things.
+`emac-gui` supersedes them for interactive use -- it's the one that can also *run* things, and
+its **Runs & results** page reads the same on-disk logs those dashboards were built from.
 
 ## Verify
 

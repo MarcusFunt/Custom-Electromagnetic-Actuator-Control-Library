@@ -47,10 +47,29 @@ def test_build_argv_unknown_command_raises():
 
 def test_commands_registry_is_well_formed():
     for name, spec in S.COMMANDS.items():
-        assert spec["module"].startswith("emac_sim.")
+        # a command is backed by EITHER an importable module or a fixed (server-controlled) script
+        assert (spec.get("module") or "").startswith("emac_sim.") or spec.get("script")
+        if spec.get("script"):
+            assert spec["script"].endswith(".py")
         for arg in spec["args"]:
             assert {"name", "type"} <= set(arg)
             assert arg["type"] in {"config", "text", "number", "int", "bool", "choice"}
+
+
+def test_build_argv_script_command_launches_the_fixed_script():
+    argv = S.build_argv("femm_bo", {"backend": "reference", "n_calls": 12})
+    assert "-m" not in argv                              # a script, not a module
+    assert argv[1].replace("\\", "/").endswith("studies/femm_trends/bo_search.py")
+    assert "--backend" in argv and "reference" in argv and "12" in argv
+
+
+def test_reproduce_commands_exist_for_every_run_source():
+    # every run's Reproduce button must map to a real, launchable command
+    for src in S.RUN_SOURCES:
+        cmd = src["reproduce"]["cmd"]
+        assert cmd in S.COMMANDS, f"{src['id']} -> unknown command {cmd!r}"
+        argv = S.build_argv(cmd, src["reproduce"].get("args", {}))  # must not raise
+        assert argv[0] and len(argv) >= 2
 
 
 def test_json_default_coerces_numpy_scalars_and_arrays():
@@ -172,3 +191,67 @@ def test_qc_directory_batch_triages_every_table():
         json.dumps(rows, default=S._json_default)
     finally:
         shutil.rmtree(S.REPO_ROOT / "build" / "gui_test", ignore_errors=True)
+
+
+# --------------------------------------------------------------------------- run-data explorer
+def test_normalize_design_search_handles_both_log_shapes():
+    rows = [
+        {"geom": {"n_coils": 16, "turns": 700}, "speed": 50.0, "efficiency": 0.14},   # rl-hw shape
+        {"geom": {"turns": 500}, "driver": {"bus_voltage_v": 260.0}, "speed_mps": 24.0},  # femm-bo shape
+        {"geom": {}, "value": 5.0},                                                    # legacy 'value'
+        {"geom": {}, "speed": 1.0, "error": "boom"},                                   # dropped (error)
+        {"geom": {}, "speed": float("inf")},                                           # dropped (non-finite)
+    ]
+    recs = S._normalize_design_search(rows)
+    assert len(recs) == 3
+    assert recs[0]["efficiency"] == 0.14 and recs[0]["params"]["n_coils"] == 16
+    assert recs[1]["params"]["bus_voltage_v"] == 260.0 and recs[1]["efficiency"] is None
+    assert recs[2]["speed"] == 5.0
+
+
+def test_pareto_max_keeps_only_nondominated():
+    # maximizing both: (1,1) is dominated by (2,2); (2,2),(1,3),(3,1) are all non-dominated
+    idx = S._pareto_max([(1, 1), (2, 2), (1, 3), (3, 1)])
+    assert set(idx) == {1, 2, 3}
+
+
+def test_normalize_pareto_drops_nonfinite_and_keeps_fields():
+    pts = S._normalize_pareto([{"lam": 0.0, "v": 48.0, "efficiency": 0.15, "exit_rate": 1.0},
+                               {"lam": 0.2, "v": None, "efficiency": 0.3}])
+    assert len(pts) == 1 and pts[0]["lam"] == 0.0 and pts[0]["exit_rate"] == 1.0
+
+
+def test_load_factorial_aggregates_best_per_cell(tmp_path):
+    d = tmp_path / "results"
+    d.mkdir()
+    # cell 0: two driver configs per force law -> keep the max
+    (d / "cell_0000.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"cell_id": 0, "turns": 400, "coil_length_m": 0.01, "radial_thickness_m": 0.005,
+         "magnet_radius_m": 0.004, "magnet_length_m": 0.02, "remanence_t": 1.2,
+         "force_law": "analytic", "exit_speed_mps": 3.0, "sim_error": None, "bus_voltage_v": 12},
+        {"cell_id": 0, "force_law": "analytic", "exit_speed_mps": 9.0, "sim_error": None, "bus_voltage_v": 260},
+        {"cell_id": 0, "force_law": "femm", "exit_speed_mps": 8.0, "sim_error": None, "bus_voltage_v": 260},
+        {"cell_id": 0, "force_law": "femm", "exit_speed_mps": 2.0, "sim_error": "x"},   # errored -> ignored
+    ]))
+    cells = S._load_factorial(d)
+    assert len(cells) == 1
+    c = cells[0]
+    assert c["analytic_best"] == 9.0 and c["femm_best"] == 8.0
+    assert c["best_config"]["bus_voltage_v"] == 260 and c["geom"]["turns"] == 400
+
+
+def test_list_runs_and_load_run_are_serializable():
+    runs = S.list_runs()                                  # uses whatever real artifacts exist here
+    json.dumps(runs, default=S._json_default)
+    for r in runs:
+        assert {"id", "kind", "title", "reproduce", "summary"} <= set(r)
+        d = S.load_run(r["id"])
+        assert d["kind"] == r["kind"] and "reproduce_cmdline" in d
+        if d["kind"] == "design_search":
+            assert len(d["best_so_far"]) == len(d["records"])
+        json.dumps(d, default=S._json_default)
+
+
+def test_load_run_unknown_id_raises():
+    with pytest.raises(ValueError, match="unknown run"):
+        S.load_run("does_not_exist")
