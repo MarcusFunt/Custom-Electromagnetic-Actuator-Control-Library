@@ -31,7 +31,8 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
-REPO_ROOT = HERE.parents[3]
+# .../tools/python/emac_sim/rl/hw_search.py -> repo root is parents[4] (rl, emac_sim, python, tools)
+REPO_ROOT = HERE.parents[4]
 sys.path.insert(0, str(REPO_ROOT / "tools" / "python"))
 
 from emac_sim.rl.geometry import CoilgunSpec                    # noqa: E402
