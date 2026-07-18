@@ -255,3 +255,41 @@ def test_list_runs_and_load_run_are_serializable():
 def test_load_run_unknown_id_raises():
     with pytest.raises(ValueError, match="unknown run"):
         S.load_run("does_not_exist")
+
+
+# --------------------------------------------------------------------------- candidate animation
+def test_spec_from_params_fills_defaults_and_clamps_coils():
+    from emac_sim.rl.geometry import CoilgunSpec
+    base = CoilgunSpec()
+    spec = S._spec_from_params({"turns": 800, "magnet_radius_m": 0.005})
+    assert spec.turns == 800 and spec.magnet_radius_m == 0.005
+    assert spec.coil_length_m == base.coil_length_m           # missing knob -> default
+    assert S._spec_from_params({}, n_coils=999).n_coils == 40  # clamped
+    assert S._spec_from_params({}, n_coils=1).n_coils == 2
+    # a categorical/None value must not crash the float conversion -> falls back to default
+    assert S._spec_from_params({"turns": None}).turns == base.turns
+
+
+def test_simulate_candidate_analytic_returns_animation_payload():
+    champ = {"n_coils": 12, "turns": 500, "coil_length_m": 0.012, "radial_thickness_m": 0.006,
+             "magnet_radius_m": 0.004, "magnet_length_m": 0.014, "remanence_t": 1.25,
+             "bus_voltage_v": 450.0, "i_max_a": 100.0}
+    d = S.simulate_candidate(champ, force_law="analytic")
+    assert d["force_law"] == "analytic"
+    L, F, sm = d["layout"], d["frames"], d["summary"]
+    assert L["n_coils"] == 12 and len(L["coil_positions_m"]) == 12
+    assert L["x_end_m"] > L["x_start_m"]
+    assert 2 <= len(F) <= 200                                  # trimmed + downsampled
+    f0 = F[0]
+    assert {"t", "x", "v", "coil", "i"} <= set(f0)
+    assert F[-1]["x"] > F[0]["x"]                              # the slug advances
+    assert 0 <= f0["coil"] < 12
+    assert sm["v_exit"] > 0 and sm["flight_ms"] > 0 and sm["mass_g"] > 0
+    json.dumps(d, default=S._json_default)
+
+
+def test_simulate_candidate_femm_requires_femm():
+    if S.femm_available():
+        pytest.skip("FEMM installed here; the not-installed guard can't be exercised")
+    with pytest.raises(ValueError, match="FEMM is not installed"):
+        S.simulate_candidate({"n_coils": 8}, force_law="femm")

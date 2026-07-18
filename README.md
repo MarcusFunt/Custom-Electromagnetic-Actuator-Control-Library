@@ -158,7 +158,10 @@ your browser. It unifies what used to be three separate pages into one **EMAC co
   **analytic-vs-FEMM agreement** and a switchable design-trend chart. Every run has a
   **Reproduce** button that pre-fills the Run tab (scoped small for a fast re-validation) so you
   can re-run it to confirm the result -- all points hover for the exact geometry, and export to
-  CSV/SVG.
+  CSV/SVG. **Click any candidate** to play a **launch animation** of that geometry -- the slug
+  accelerating through the multi-stage tube with the coils firing, a velocity-vs-position trace,
+  and play/scrub controls -- running on the fast analytic force by default, or rebuilt on a **real
+  FEMM force table** for that exact coil/slug with one click.
 - **Run a tool** -- pick any command (`emac-sim`, `emac-optimize`, `emac-femgen`, `emac-femqc`,
   `emac-femcheck`, `emac-rl-train`, the hardware BO×RL search, or the FEMM studies), set its
   options in a form, run it, and watch its output stream live -- the same as a terminal, but
