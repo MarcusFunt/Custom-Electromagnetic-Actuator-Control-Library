@@ -39,13 +39,17 @@ def train_one(spec: CoilgunSpec, lam: float, timesteps: int, outdir: Path, n_env
         model = PPO("MlpPolicy", venv, **kw)
     model.learn(total_timesteps=timesteps, progress_bar=False)
     outdir.mkdir(parents=True, exist_ok=True)
-    path = outdir / f"ppo_lam{lam:g}{'_lstm' if recurrent else ''}"
+    # Sanitize the lambda in the filename: SB3's save/load treats the '.' in e.g. "ppo_lam0.05"
+    # as a file extension, so it would NOT append/expect ".zip" and the saved/loaded names drift
+    # apart. Use a dot-free tag (0.05 -> "0p05") so model.save reliably lands "<tag>.zip".
+    tag = ("%g" % lam).replace(".", "p").replace("-", "m")
+    path = outdir / f"ppo_lam{tag}{'_lstm' if recurrent else ''}"
     model.save(str(path))
     from .evaluate import evaluate_model
     metrics = evaluate_model(model, spec, force_lut=force_lut, lam=lam, sensing=sensing,
                              recurrent=recurrent)
     metrics.update(lam=lam, timesteps=timesteps, model_path=str(path) + ".zip")
-    (outdir / f"metrics_lam{lam:g}.json").write_text(json.dumps(metrics, indent=2))
+    (outdir / f"metrics_lam{tag}.json").write_text(json.dumps(metrics, indent=2))
     return model, metrics
 
 
