@@ -173,6 +173,36 @@ svg .pt{opacity:0;transition:opacity .05s}svg .pt.on{opacity:1}
 .toast b{display:block;margin-bottom:2px;font-size:13px}.toast .sub{color:var(--mut);font-size:12px}
 @keyframes tin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .kbdhint{font-size:10.5px;color:var(--mut);margin-left:auto;opacity:.7;border:1px solid var(--line);border-radius:5px;padding:0 5px}
+/* runs browser */
+.runsgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin:6px 0 20px}
+.runcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 17px;box-shadow:var(--shadow);
+  cursor:pointer;transition:.16s;display:flex;flex-direction:column;gap:9px}
+.runcard:hover{transform:translateY(-2px);box-shadow:var(--shadow2);border-color:var(--accent)}
+.runcard-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.runcard h4{margin:0;font-size:14.5px;font-weight:700;line-height:1.25}
+.runcard p{margin:0;color:var(--mut);font-size:12.5px;line-height:1.45;flex:1}
+.kindbadge{font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;color:var(--accent);
+  background:rgba(76,114,176,.12);border:1px solid rgba(76,114,176,.25);border-radius:20px;padding:3px 9px;white-space:nowrap}
+.runstat{font-size:12.5px;color:var(--mut);font-variant-numeric:tabular-nums}
+.runstat b{color:var(--ink);font-weight:700}
+.runcard .btnrow{margin-top:2px}
+.runcard .act{padding:7px 13px;font-size:12.5px}
+/* scatter chart */
+svg .sptring{pointer-events:none}
+svg .spt{cursor:crosshair}
+/* segmented control */
+.seg{display:inline-flex;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex-wrap:wrap}
+.seg button{border:0;background:var(--panel2);color:var(--mut);padding:6px 11px;font:inherit;font-size:12px;cursor:pointer;
+  border-right:1px solid var(--line);transition:.12s}
+.seg button:last-child{border-right:0}
+.seg button:hover{color:var(--ink)}
+.seg button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.reprocard code{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:11.5px;
+  font-family:ui-monospace,Consolas,monospace;color:var(--ink);word-break:break-all}
+.smallmults{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.smallmults .sm{border:1px solid var(--line);border-radius:11px;padding:10px 10px 4px;background:var(--panel2)}
+.smallmults .sm .section-sub{font-size:11.5px;margin:0 0 4px}
+.toggle-lit{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--mut);cursor:pointer}
 /* responsive: collapse the sidebar to icons on narrow windows */
 @media(max-width:920px){
   nav{flex:0 0 60px;padding:12px 7px}
@@ -199,12 +229,14 @@ svg .pt{opacity:0;transition:opacity .05s}svg .pt.on{opacity:1}
   <nav aria-label="Sections">
     <div class="grp">Overview</div>
     <button data-view="home" class="on" title="Home (1)"><span class="ic" data-icon="home"></span><span class="lbltxt">Home</span><span class="kbdhint">1</span></button>
+    <div class="grp">Explore</div>
+    <button data-view="runs" title="Runs &amp; results (2)"><span class="ic" data-icon="chart"></span><span class="lbltxt">Runs &amp; results</span><span class="kbdhint">2</span></button>
     <div class="grp">Do</div>
-    <button data-view="run" title="Run a tool (2)"><span class="ic" data-icon="play"></span><span class="lbltxt">Run a tool</span><span class="kbdhint">2</span></button>
-    <button data-view="sweep" title="Sweep &amp; estimate (3)"><span class="ic" data-icon="sweep"></span><span class="lbltxt">Sweep &amp; estimate</span><span class="kbdhint">3</span></button>
+    <button data-view="run" title="Run a tool (3)"><span class="ic" data-icon="play"></span><span class="lbltxt">Run a tool</span><span class="kbdhint">3</span></button>
+    <button data-view="sweep" title="Sweep &amp; estimate (4)"><span class="ic" data-icon="sweep"></span><span class="lbltxt">Sweep &amp; estimate</span><span class="kbdhint">4</span></button>
     <div class="grp">Analyze</div>
-    <button data-view="analyze" title="Force tables (4)"><span class="ic" data-icon="analyze"></span><span class="lbltxt">Force tables</span><span class="kbdhint">4</span></button>
-    <button data-view="optimizer" title="Optimizer run (5)"><span class="ic" data-icon="target"></span><span class="lbltxt">Optimizer run</span><span class="kbdhint">5</span></button>
+    <button data-view="analyze" title="Force tables (5)"><span class="ic" data-icon="analyze"></span><span class="lbltxt">Force tables</span><span class="kbdhint">5</span></button>
+    <button data-view="optimizer" title="Optimizer run (6)"><span class="ic" data-icon="target"></span><span class="lbltxt">Optimizer run</span><span class="kbdhint">6</span></button>
   </nav>
 
   <main>
@@ -221,6 +253,16 @@ svg .pt{opacity:0;transition:opacity .05s}svg .pt.on{opacity:1}
         <h3>Workspace</h3>
         <div class="statusgrid" id="homeStatus"></div>
       </div>
+    </section>
+
+    <!-- RUNS -->
+    <section id="view-runs" class="hidden">
+      <div class="view-head"><h2 class="view">Runs &amp; results</h2>
+        <p class="lede">Every search and sweep you've run, turned into interactive charts — the
+          speed/efficiency trade-off, how each Bayesian search converged, and what the design
+          space looks like. Open one to explore it, or reproduce it to validate the result.</p></div>
+      <div id="runsBrowser"></div>
+      <div id="runDetail"></div>
     </section>
 
     <!-- RUN -->
@@ -370,6 +412,8 @@ const ICONS={
   target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
   clock:'<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/>',
   refresh:'<polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2-9.5L23 10"/>',
+  chart:'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
 };
 function icon(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]||""}</svg>`;}
 function renderIcons(root=document){root.querySelectorAll("[data-icon]").forEach(e=>{if(!e.dataset.iconDone){e.innerHTML=icon(e.dataset.icon);e.dataset.iconDone="1";}});}
@@ -394,9 +438,10 @@ $("#themeBtn").onclick=()=>{const cur=document.documentElement.getAttribute("dat
 
 function go(view){
   document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.view===view));
-  ["home","run","sweep","analyze","optimizer"].forEach(v=>$("#view-"+v).classList.toggle("hidden",v!==view));
+  ["home","runs","run","sweep","analyze","optimizer"].forEach(v=>$("#view-"+v).classList.toggle("hidden",v!==view));
   if(view==="optimizer")loadOptimizer();
   if(view==="home")renderHome();
+  if(view==="runs")renderRuns();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>go(b.dataset.view));
 $("#brandHome").onclick=()=>go("home");
@@ -431,6 +476,7 @@ function runJob(cmd,args,consoleEl,statusEl,onDone,stopBtn,runBtn,elapsedEl,onLi
 
 // ---- HOME ----
 const HOME_CARDS=[
+  {v:"runs",ic:"chart",t:"Runs & results",d:"Explore your completed searches and sweeps as interactive charts — speed vs efficiency, convergence, design trends — and reproduce any of them."},
   {v:"run",ic:"play",t:"Run a tool",d:"Simulate a config, optimize a design, generate force tables, or QC them — with live output."},
   {v:"sweep",ic:"sweep",t:"Sweep & estimate",d:"Set how large and detailed a FEM sweep should be, see how long it'll take, then launch it."},
   {v:"analyze",ic:"analyze",t:"Analyze force tables",d:"Coupling curves, heatmaps, quality checks, and analytic-vs-FEM accuracy for every table."},
@@ -448,6 +494,9 @@ async function renderHome(){
   add("Example configs", (STATE.configs||[]).length);
   try{const {luts}=await api(`/api/luts?dir=${encodeURIComponent(STATE.default_lut_dir)}`);
     add("Force tables ready", luts.length?`${luts.length}`:'<span class="muted">0</span>');}catch(e){}
+  try{const {runs}=await api("/api/runs");
+    const tile=el("div",{class:"tile"},[el("div",{class:"v"},String(runs.length)),el("div",{class:"l"},"Completed runs")]);
+    tile.style.cursor="pointer";tile.onclick=()=>go("runs");s.appendChild(tile);}catch(e){}
 }
 
 // ---- RUN ----
@@ -579,7 +628,7 @@ function mountHeatmap(host,offsets,currents,grid){
   hit.addEventListener("mouseleave",()=>tip.classList.remove("on"));
 }
 function exportSvg(svgEl,name){
-  const clone=svgEl.cloneNode(true);clone.querySelectorAll(".hit,.cross,.pt").forEach(e=>e.remove());
+  const clone=svgEl.cloneNode(true);clone.querySelectorAll(".hit,.cross,.pt,.sptring").forEach(e=>e.remove());
   const cs=getComputedStyle(document.documentElement);let s=new XMLSerializer().serializeToString(clone);
   ["--line","--mut","--ink","--panel","--accent"].forEach(v=>{s=s.split(`var(${v})`).join(cs.getPropertyValue(v).trim()||"#888");});
   const ink=cs.getPropertyValue("--ink").trim()||"#222",bg=cs.getPropertyValue("--panel").trim()||"#fff";
@@ -684,11 +733,296 @@ async function loadOptimizer(){
   if(ys)mountLine($("#optChart"),[{name:"best",ys,color:"#55A868"}],ys.map((_,i)=>i),{xlabel:"generation",ylabel:"exit speed (m/s)",xdec:0,xname:"generation"});
 }
 
-// ---- keyboard nav (1..5 switch views when not typing) ----
+// ---- RUNS: interactive exploration of the user's completed searches & sweeps ----
+const RUN_KIND_LABEL={design_search:"Design search",pareto:"Speed / efficiency frontier",factorial:"Factorial sweep"};
+// friendly name / unit / scale for every geometry & driver knob the runs carry
+const PARAM_INFO={
+  n_coils:["stages","",1,0], turns:["turns","",1,0],
+  coil_length_m:["coil length","mm",1e3,1], radial_thickness_m:["winding thickness","mm",1e3,1],
+  magnet_radius_m:["magnet radius","mm",1e3,1], magnet_length_m:["magnet length","mm",1e3,1],
+  remanence_t:["remanence","T",1,2], bus_voltage_v:["bus voltage","V",1,0],
+  i_max_a:["peak current","A",1,0], driver_bipolar:["H-bridge","",1,0], pump_envelope:["waveform","",1,0],
+};
+function paramLabel(k){return (PARAM_INFO[k]||[k])[0];}
+function paramAxis(k){const i=PARAM_INFO[k]||[k,"",1,2];return {label:i[0]+(i[1]?" ("+i[1]+")":""),scale:i[2],dec:i[3]};}
+function fmtParam(k,v){if(v==null)return "—";if(typeof v!=="number")return String(v);
+  const i=PARAM_INFO[k]||[k,"",1,2];return fmtNum(v*i[2],i[3])+(i[1]?" "+i[1]:"");}
+// evaluation-order color: cool (early) -> warm (late); vivid on both themes
+function iterColor(t){t=Math.max(0,Math.min(1,t));
+  const cool=[76,114,176],mid=[76,154,160],warm=[221,132,82],L=(a,b,f)=>a.map((x,i)=>Math.round(x+(b[i]-x)*f));
+  const c=t<0.5?L(cool,mid,t*2):L(mid,warm,(t-0.5)*2);return `rgb(${c[0]},${c[1]},${c[2]})`;}
+// literature reference points for the novelty story (approximate, clearly labeled)
+const RELUCTANCE_LIT=[{v:23,eff:8.5,name:"best-η reluctance (approx.)"},{v:75,eff:6.5,name:"reluctance gun (approx.)"},{v:131,eff:1.3,name:"Einat 2023 (approx.)"}];
+const OUR_VALIDATED={v:45.6,eff:11.9,name:"our FEMM-validated compromise"};
+
+// ---- scatter primitive (per-point hover, optional frontier line, colorbar, y=x diagonal) ----
+function buildScatter(series,opts={}){
+  const W=opts.W||680,H=opts.H||300,ml=opts.ml??58,mr=opts.mr??(opts.colorbar?72:16),mt=opts.mt??14,mb=opts.mb??38;
+  let xmin=Infinity,xmax=-Infinity,ymin=Infinity,ymax=-Infinity;
+  const acc=p=>{if(p.x<xmin)xmin=p.x;if(p.x>xmax)xmax=p.x;if(p.y<ymin)ymin=p.y;if(p.y>ymax)ymax=p.y;};
+  series.forEach(s=>s.points.forEach(acc));(opts.frontier||[]).forEach(acc);
+  if(!isFinite(xmin)){xmin=0;xmax=1;}if(xmin===xmax){xmin-=1;xmax+=1;}
+  if(!isFinite(ymin)){ymin=0;ymax=1;}if(ymin===ymax){ymin-=1;ymax+=1;}
+  xmin-=(xmax-xmin)*0.06;xmax+=(xmax-xmin)*0.055;ymin-=(ymax-ymin)*0.08;ymax+=(ymax-ymin)*0.07;
+  if(opts.x0&&xmin>0)xmin=0;if(opts.y0&&ymin>0)ymin=0;
+  const sx=x=>ml+(x-xmin)/((xmax-xmin)||1)*(W-ml-mr),sy=y=>H-mb-(y-ymin)/((ymax-ymin)||1)*(H-mt-mb);
+  const ticks=(a,b,n)=>Array.from({length:n},(_,i)=>a+(b-a)*i/(n-1));
+  let g="";
+  ticks(ymin,ymax,5).forEach(v=>{const y=sy(v);g+=`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${W-mr}" y2="${y.toFixed(1)}" stroke="var(--line)"/><text x="${ml-8}" y="${(y+3).toFixed(1)}" text-anchor="end">${fmtNum(v*(opts.yscale||1),opts.ydec??1)}</text>`;});
+  ticks(xmin,xmax,6).forEach(v=>{const x=sx(v);g+=`<text x="${x.toFixed(1)}" y="${H-mb+16}" text-anchor="middle">${fmtNum(v*(opts.xscale||1),opts.xdec??1)}</text>`;});
+  if(opts.diagonal){const lo=Math.max(xmin,ymin),hi=Math.min(xmax,ymax);
+    g+=`<line x1="${sx(lo).toFixed(1)}" y1="${sy(lo).toFixed(1)}" x2="${sx(hi).toFixed(1)}" y2="${sy(hi).toFixed(1)}" stroke="var(--mut)" stroke-dasharray="4 4" opacity=".6"/>`;}
+  if(opts.frontier&&opts.frontier.length>1){const pts=opts.frontier.map(p=>`${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join(" ");
+    g+=`<polyline points="${pts}" fill="none" stroke="${opts.frontierColor||'var(--accent)'}" stroke-width="2" stroke-dasharray="5 4" opacity=".85"/>`;}
+  const meta=[];
+  series.forEach((s,si)=>s.points.forEach((p,pi)=>{const cx=sx(p.x),cy=sy(p.y);
+    const c=p.color||s.color||SERIES_COLORS[si%6],r=p.r||opts.r||3.6;
+    const stroke=p.ring?`stroke="var(--ink)" stroke-width="1.7"`:`stroke="var(--panel)" stroke-width="1"`;
+    g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="${c}" fill-opacity="${p.dim?0.4:0.9}" ${stroke}/>`;
+    if(p.star){g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r+3}" fill="none" stroke="${c}" stroke-width="1.6" opacity=".8"/>`;}
+    meta.push({cx,cy,si,pi});}));
+  g+=`<text x="${((ml+W-mr)/2).toFixed(1)}" y="${H-4}" text-anchor="middle">${opts.xlabel||''}</text>`;
+  g+=`<text x="14" y="${((mt+H-mb)/2).toFixed(1)}" text-anchor="middle" transform="rotate(-90 14 ${((mt+H-mb)/2).toFixed(1)})">${opts.ylabel||''}</text>`;
+  if(opts.colorbar){const cbx=W-mr+16,cbw=11,cbh=H-mt-mb;
+    for(let k=0;k<=40;k++){const t=k/40;g+=`<rect x="${cbx}" y="${(mt+cbh*(1-t)).toFixed(1)}" width="${cbw}" height="${(cbh/40+0.6).toFixed(2)}" fill="${iterColor(t)}"/>`;}
+    g+=`<text x="${cbx-1}" y="${mt-3}" text-anchor="start" font-size="9">late</text><text x="${cbx-1}" y="${H-mb+11}" text-anchor="start" font-size="9">early</text>`;}
+  g+=`<circle class="sptring" r="6.6" fill="none" stroke="var(--ink)" stroke-width="2" opacity="0"/>`;
+  g+=`<rect class="hit" x="${ml}" y="${mt}" width="${W-ml-mr}" height="${H-mt-mb}"/>`;
+  return {svg:`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>`,W,H,meta,series,opts};
+}
+function mountScatter(host,series,opts={}){
+  const ch=buildScatter(series,opts);host.classList.add("charthost");
+  host.innerHTML=ch.svg+`<div class="charttip"></div>`;
+  const svg=host.querySelector("svg"),tip=host.querySelector(".charttip"),ring=svg.querySelector(".sptring"),hit=svg.querySelector(".hit");
+  hit.addEventListener("mousemove",(e)=>{const r=svg.getBoundingClientRect();
+    const vx=(e.clientX-r.left)/r.width*ch.W,vy=(e.clientY-r.top)/r.height*ch.H;
+    let best=1e18,bm=null;ch.meta.forEach(m=>{const dd=(m.cx-vx)**2+(m.cy-vy)**2;if(dd<best){best=dd;bm=m;}});
+    if(!bm)return;const p=ch.series[bm.si].points[bm.pi];
+    ring.setAttribute("cx",bm.cx);ring.setAttribute("cy",bm.cy);ring.setAttribute("opacity","0.9");
+    const rows=(p.meta||[]).map(kv=>`<div><span class="k" style="display:inline">${kv[0]}:</span> <b>${kv[1]}</b></div>`).join("");
+    tip.innerHTML=(p.label?`<div class="k">${p.label}</div>`:"")+rows;
+    const hr=host.getBoundingClientRect();
+    tip.style.left=((bm.cx/ch.W)*r.width+(r.left-hr.left))+"px";
+    tip.style.top=((bm.cy/ch.H)*r.height+(r.top-hr.top))+"px";tip.classList.add("on");});
+  hit.addEventListener("mouseleave",()=>{ring.setAttribute("opacity","0");tip.classList.remove("on");});
+}
+function wireSvgExports(root){root.querySelectorAll("[data-svg]").forEach(b=>b.onclick=()=>{const s=$("#"+b.dataset.svg)?.querySelector("svg");if(s)exportSvg(s,b.dataset.name+".svg");});}
+
+// ---- runs browser ----
+let RUNS=[];
+async function renderRuns(){
+  const box=$("#runsBrowser");$("#runDetail").innerHTML="";
+  box.innerHTML='<div class="card"><p class="muted">Loading runs…</p></div>';
+  let runs;try{runs=(await api("/api/runs")).runs;}catch(e){box.innerHTML=`<div class="card err">${e}</div>`;return;}
+  RUNS=runs;
+  if(!runs.length){box.innerHTML=`<div class="empty"><div class="big">${icon("chart")}</div><div>No runs found yet.</div><div class="small" style="margin-top:6px">Launch a search or sweep, then come back to explore it.</div></div>`;return;}
+  const groups={};runs.forEach(r=>{(groups[r.kind]=groups[r.kind]||[]).push(r);});
+  let html="";
+  ["design_search","pareto","factorial"].forEach(k=>{if(!groups[k])return;
+    html+=`<div class="section-sub" style="margin-top:6px">${RUN_KIND_LABEL[k]}</div><div class="runsgrid">`;
+    groups[k].forEach(r=>{const s=r.summary||{},bits=[];
+      if(s.best_speed!=null)bits.push(`<b>${fmtNum(s.best_speed,1)}</b> m/s`);
+      if(s.best_eff!=null)bits.push(`<b>${(s.best_eff*100).toFixed(1)}</b>% eff`);
+      const stat=s.error?`<span class="err">${s.error}</span>`:`${s.n} ${s.unit}${bits.length?" · "+bits.join(" · "):""}`;
+      html+=`<div class="runcard" data-id="${r.id}" tabindex="0" role="button">
+        <div class="runcard-h"><h4>${r.title}</h4><span class="kindbadge">${RUN_KIND_LABEL[r.kind]}</span></div>
+        <p>${r.desc}</p><div class="runstat">${stat}</div>
+        <div class="btnrow"><button class="act sec open">Open →</button><button class="act ghost repro" title="Pre-fill the Run tab to reproduce this run">Reproduce</button></div>
+      </div>`;});
+    html+=`</div>`;});
+  box.innerHTML=html;
+  box.querySelectorAll(".runcard").forEach(c=>{const id=c.dataset.id,open=()=>showRun(id);
+    c.querySelector(".open").onclick=(e)=>{e.stopPropagation();open();};
+    c.querySelector(".repro").onclick=(e)=>{e.stopPropagation();reproduceById(id);};
+    c.onclick=open;c.onkeydown=(e)=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}};});
+}
+function reproduceById(id){const r=RUNS.find(x=>x.id===id);if(r)reproduceRun(r.reproduce,r.title);}
+function reproduceRun(rep,title){
+  if(!rep||!STATE.commands[rep.cmd]){toast("Command unavailable",(rep&&rep.cmd)||"","bad");return;}
+  go("run");const sel=$("#cmdSel");sel.value=rep.cmd;renderCmd();
+  Object.entries(rep.args||{}).forEach(([k,v])=>{const e=document.getElementById("arg_"+k);if(!e)return;
+    if(e.type==="checkbox")e.checked=!!v;else e.value=v;});
+  toast("Ready to reproduce",(title||STATE.commands[rep.cmd].label)+" — review options, then Run");
+  $("#runBtn").scrollIntoView({behavior:"smooth",block:"center"});
+}
+function friendlyCmd(s){if(!s)return "";
+  const m=s.match(/^(?:"[^"]*"|\S+)\s*(.*)$/);let rest=m?m[1]:s;
+  rest=rest.replace(/"?[A-Za-z]:[\\/][^"]*[\\/](studies[\\/][^"]*\.py)"?/,(x,g)=>g.replace(/\\/g,"/"));
+  return "python "+rest;}
+function copyBtn(text){const b=el("button",{class:"xbtn"},"copy");
+  b.onclick=()=>{navigator.clipboard?.writeText(text).then(()=>toast("Copied to clipboard",""));};return b;}
+function reproduceCard(d){
+  const quick=friendlyCmd(d.reproduce_cmdline);
+  const card=el("div",{class:"card reprocard"});
+  card.innerHTML=`<div class="charthead"><div class="section-sub" style="margin:0">Reproduce &amp; validate</div>
+    <button class="act ghost" id="reproGo"><span class="bic" data-icon="play"></span>Set up in Run tab →</button></div>
+    <p class="muted small" style="margin:4px 0 8px">Re-run this to validate the result. The quick version is scoped down (fewer steps / a fast backend) so you get an answer in minutes; the original is the full run.</p>
+    <table class="metatable"><tr><td>quick re-validation</td><td><code>${quick||"—"}</code></td></tr>
+    <tr><td>original run</td><td><code>${d.original||"—"}</code></td></tr></table>`;
+  renderIcons(card);
+  card.querySelector("#reproGo").onclick=()=>reproduceRun(d.reproduce,d.title);
+  card.querySelectorAll("code").forEach((c,i)=>c.after(copyBtn([quick,d.original][i]||"")));
+  return card;
+}
+async function showRun(id){
+  const det=$("#runDetail");det.innerHTML='<div class="card"><p class="muted">Loading…</p></div>';
+  let d;try{d=await api(`/api/rundata?id=${encodeURIComponent(id)}`);}catch(e){det.innerHTML=`<div class="card err">${e}</div>`;return;}
+  det.innerHTML="";
+  const head=el("div",{class:"view-head"});
+  head.innerHTML=`<h2 class="view" style="font-size:18px">${d.title}</h2><p class="lede" style="margin-top:3px">${d.desc}</p>`;
+  det.appendChild(head);
+  if(d.kind==="design_search")renderDesignSearch(d,det);
+  else if(d.kind==="pareto")renderPareto(d,det);
+  else if(d.kind==="factorial")renderFactorial(d,det);
+  det.appendChild(reproduceCard(d));
+  det.scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+// ---- design-search viewer (RL-hw BO, FEMM BOs) ----
+function renderDesignSearch(d,det){
+  const recs=d.records,n=recs.length,pset=new Set(d.pareto_idx),bi=d.best_index;
+  const tiles=[["evaluations",n,""],["best exit speed",fmtNum(d.best_so_far[d.best_so_far.length-1]||0,1),"m/s"]];
+  if(d.has_eff){const effs=recs.map(r=>r.efficiency).filter(v=>v!=null);
+    tiles.push(["best efficiency",(Math.max(...effs)*100).toFixed(1),"%"]);tiles.push(["Pareto-optimal",d.pareto_idx.length,"points"]);}
+  const tcard=el("div",{class:"card"});
+  tcard.innerHTML=`<div class="tiles">${tiles.map(t=>`<div class="tile"><div class="v">${t[1]} <small>${t[2]}</small></div><div class="l">${t[0]}</div></div>`).join("")}</div>`;
+  det.appendChild(tcard);
+  // hero scatter
+  const hero=el("div",{class:"card"});
+  const heroName=d.id+(d.has_eff?"_speed_vs_efficiency":"_speed_vs_eval");
+  hero.innerHTML=`<div class="charthead"><div class="section-sub">${d.has_eff?"Exit speed vs. efficiency — every candidate":"Exit speed vs. evaluation order"}</div>
+    <div class="btnrow" style="margin:0"><button class="xbtn" data-svg="dsHero" data-name="${heroName}">⤓ SVG</button><button class="xbtn" id="dsCsv">⤓ CSV</button></div></div>
+    <div class="charthost" id="dsHero"></div>
+    <p class="muted small" style="margin-top:8px">${d.has_eff?'Color = evaluation order (cool → warm). Ringed points are Pareto-optimal (no other candidate is better on both speed and efficiency); the green ring marks the fastest.':'Color = evaluation order; the dashed line is the best-so-far envelope.'}</p>`;
+  det.appendChild(hero);
+  let heroPts,heroOpts;
+  if(d.has_eff){
+    heroPts=recs.map((r,i)=>({x:r.efficiency*100,y:r.speed,color:i===bi?"#55A868":iterColor(i/Math.max(1,n-1)),
+      ring:pset.has(i)||i===bi,r:i===bi?5.4:(pset.has(i)?4.4:3.2),
+      label:`eval #${i+1}${i===bi?" · best":""}${pset.has(i)?" · Pareto":""}`,
+      meta:[["exit speed",fmtNum(r.speed,2)+" m/s"],["efficiency",(r.efficiency*100).toFixed(2)+" %"],
+        ...d.param_keys.map(k=>[paramLabel(k),fmtParam(k,r.params[k])])]}));
+    const front=d.pareto_idx.map(i=>({x:recs[i].efficiency*100,y:recs[i].speed})).sort((a,b)=>a.x-b.x);
+    heroOpts={xlabel:"efficiency (%)",ylabel:"exit speed (m/s)",frontier:front,frontierColor:"#55A868",colorbar:true,x0:true,y0:true};
+  }else{
+    heroPts=recs.map((r,i)=>({x:i+1,y:r.speed,color:iterColor(i/Math.max(1,n-1)),ring:i===bi,r:i===bi?5.2:3.0,
+      label:`eval #${i+1}${i===bi?" · best":""}`,
+      meta:[["exit speed",fmtNum(r.speed,2)+" m/s"],...d.param_keys.map(k=>[paramLabel(k),fmtParam(k,r.params[k])])]}));
+    const env=d.best_so_far.map((v,i)=>({x:i+1,y:v}));
+    heroOpts={xlabel:"evaluation #",ylabel:"exit speed (m/s)",xdec:0,frontier:env,colorbar:true,y0:true};
+  }
+  mountScatter($("#dsHero"),[{name:"evals",points:heroPts}],heroOpts);
+  // convergence
+  const conv=el("div",{class:"card"});
+  conv.innerHTML=`<div class="charthead"><div class="section-sub">Convergence — best exit speed so far</div><button class="xbtn" data-svg="dsConv" data-name="${d.id}_convergence">⤓ SVG</button></div><div class="charthost" id="dsConv"></div>`;
+  det.appendChild(conv);
+  mountLine($("#dsConv"),[{name:"best so far",ys:d.best_so_far,color:"#4C72B0"}],d.best_so_far.map((_,i)=>i+1),
+    {xlabel:"evaluation #",ylabel:"exit speed (m/s)",xdec:0,xname:"eval"});
+  // per-parameter small multiples
+  const pm=el("div",{class:"card"});
+  pm.innerHTML=`<div class="section-sub">What the search explored — exit speed vs. each parameter</div><div class="smallmults" id="dsSm"></div>`;
+  det.appendChild(pm);
+  const sm=$("#dsSm");
+  d.param_keys.forEach((k,ki)=>{if(!d.param_ranges[k])return;const ax=paramAxis(k);
+    const box=el("div",{class:"sm"});box.innerHTML=`<div class="section-sub">${ax.label}</div><div class="charthost" id="dsSm${ki}"></div>`;sm.appendChild(box);
+    const pts=recs.map((r,i)=>{const xv=r.params[k];if(xv==null)return null;
+      return {x:xv*ax.scale,y:r.speed,r:2.8,color:d.has_eff&&r.efficiency!=null?iterColor(r.efficiency/ (Math.max(...recs.map(z=>z.efficiency||0))||1)):iterColor(i/Math.max(1,n-1)),
+        label:`eval #${i+1}`,meta:[[ax.label,fmtParam(k,xv)],["exit speed",fmtNum(r.speed,2)+" m/s"]]};}).filter(Boolean);
+    mountScatter($("#dsSm"+ki),[{name:k,points:pts}],{W:300,H:172,ml:44,mr:12,mb:34,xlabel:ax.label,ylabel:"m/s",xdec:ax.dec,r:2.8});});
+  // best design
+  const best=recs[bi];
+  if(best){const bc=el("div",{class:"card"});
+    bc.innerHTML=`<div class="section-sub">Best design (${fmtNum(best.speed,2)} m/s${best.efficiency!=null?", "+(best.efficiency*100).toFixed(2)+"% efficiency":""})</div>
+      <table class="metatable">${d.param_keys.map(k=>`<tr><td>${paramLabel(k)}</td><td>${fmtParam(k,best.params[k])}</td></tr>`).join("")}</table>`;
+    det.appendChild(bc);}
+  wireSvgExports(det);
+  $("#dsCsv").onclick=()=>{const hdr=["eval","speed_mps","efficiency",...d.param_keys];
+    const rows=[hdr.join(",")].concat(recs.map((r,i)=>[i+1,r.speed,r.efficiency??"",...d.param_keys.map(k=>r.params[k]??"")].join(",")));
+    download(d.id+"_evals.csv",rows.join("\n"),"text/csv");};
+}
+
+// ---- pareto viewer (RL λ-sweeps) ----
+function renderPareto(d,det){
+  const pts=d.points,launched=pts.filter(p=>p.v>0);
+  const tiles=[["λ points",pts.length,""],["best speed",fmtNum(Math.max(...launched.map(p=>p.v),0),1),"m/s"],
+    ["best efficiency",(Math.max(...launched.map(p=>p.efficiency),0)*100).toFixed(1),"%"]];
+  const tcard=el("div",{class:"card"});
+  tcard.innerHTML=`<div class="tiles">${tiles.map(t=>`<div class="tile"><div class="v">${t[1]} <small>${t[2]}</small></div><div class="l">${t[0]}</div></div>`).join("")}</div>`;
+  det.appendChild(tcard);
+  const card=el("div",{class:"card"});
+  card.innerHTML=`<div class="charthead"><div class="section-sub">Speed vs. efficiency across λ</div>
+    <label class="toggle-lit"><input type="checkbox" id="litTog"> compare to literature</label></div>
+    <div class="charthost" id="paHost"></div>
+    <div class="legend" id="paLegend"></div>
+    <p class="muted small" style="margin-top:6px">Each point is a policy trained at a different efficiency weight λ. Efficiency here is analytic (kinetic-out / bus-source-J). Failed (non-launching) λ are dimmed.</p>`;
+  det.appendChild(card);
+  const draw=(showLit)=>{
+    const main=pts.map(p=>({x:p.efficiency*100,y:p.v,dim:p.v<=0,color:p.v>0?"#4C72B0":"var(--mut)",r:p.v>0?4.6:3.2,
+      label:`λ = ${p.lam}`,meta:[["exit speed",fmtNum(p.v,2)+" m/s"],["efficiency",(p.efficiency*100).toFixed(2)+" %"],
+        ["exit rate",p.exit_rate!=null?(p.exit_rate*100).toFixed(0)+" %":"—"],["KE",p.ke_j!=null?fmtNum(p.ke_j,0)+" J":"—"]]}));
+    const front=launched.map(p=>({x:p.efficiency*100,y:p.v})).sort((a,b)=>a.x-b.x);
+    const series=[{name:"RL policies",color:"#4C72B0",points:main}];
+    if(showLit){
+      series.push({name:"literature (reluctance)",color:"#C44E52",points:RELUCTANCE_LIT.map(o=>({x:o.eff,y:o.v,r:4.4,color:"#C44E52",
+        label:o.name,meta:[["exit speed",o.v+" m/s"],["efficiency",o.eff+" %"]]}))});
+      series.push({name:"our validated design",color:"#55A868",points:[{x:OUR_VALIDATED.eff,y:OUR_VALIDATED.v,r:5.4,star:true,color:"#55A868",
+        label:OUR_VALIDATED.name,meta:[["exit speed",OUR_VALIDATED.v+" m/s"],["efficiency",OUR_VALIDATED.eff+" %"]]}]});
+    }
+    mountScatter($("#paHost"),series,{xlabel:"efficiency (%)",ylabel:"exit speed (m/s)",frontier:front,x0:true,y0:true});
+    $("#paLegend").innerHTML=series.map(s=>`<span><i style="background:${s.color}"></i>${s.name}</span>`).join("")
+      +`<span><i class="dash"></i>achievable frontier</span>`;
+  };
+  draw(false);
+  $("#litTog").onchange=(e)=>draw(e.target.checked);
+}
+
+// ---- factorial viewer (FEMM design-trends sweep) ----
+function renderFactorial(d,det){
+  const cells=d.cells,paired=cells.filter(c=>c.femm_best!=null&&c.analytic_best!=null);
+  const ratios=paired.map(c=>c.analytic_best/c.femm_best).filter(v=>isFinite(v)&&v>0).sort((a,b)=>a-b);
+  const med=ratios.length?ratios[Math.floor(ratios.length/2)]:null;
+  const tiles=[["geometry cells",cells.length,""],["best FEMM speed",fmtNum(Math.max(...cells.map(c=>c.femm_best||0)),1),"m/s"],
+    ["analytic vs FEMM",med!=null?"×"+med.toFixed(2):"—","median ratio"]];
+  const tcard=el("div",{class:"card"});
+  tcard.innerHTML=`<div class="tiles">${tiles.map(t=>`<div class="tile"><div class="v">${t[1]} <small>${t[2]}</small></div><div class="l">${t[0]}</div></div>`).join("")}</div>`;
+  det.appendChild(tcard);
+  // agreement scatter
+  const ag=el("div",{class:"card"});
+  ag.innerHTML=`<div class="charthead"><div class="section-sub">Analytic vs. FEMM — best exit speed per cell</div><button class="xbtn" data-svg="fcAg" data-name="${d.id}_analytic_vs_femm">⤓ SVG</button></div>
+    <div class="charthost" id="fcAg"></div>
+    <p class="muted small" style="margin-top:6px">Each point is one geometry cell (best driver config). The dashed line is perfect agreement; points above it mean the analytic model was optimistic.</p>`;
+  det.appendChild(ag);
+  const agPts=paired.map(c=>({x:c.analytic_best,y:c.femm_best,r:3.0,color:"#8172B3",
+    label:"cell #"+c.cell,meta:[["analytic",fmtNum(c.analytic_best,2)+" m/s"],["FEMM",fmtNum(c.femm_best,2)+" m/s"],
+      ...d.geom_keys.map(k=>[paramLabel(k),fmtParam(k,c.geom[k])])]}));
+  mountScatter($("#fcAg"),[{name:"cells",points:agPts}],{xlabel:"analytic exit speed (m/s)",ylabel:"FEMM exit speed (m/s)",diagonal:true,x0:true,y0:true});
+  // trend by parameter
+  const tr=el("div",{class:"card"});
+  tr.innerHTML=`<div class="charthead"><div class="section-sub">Design trend — best exit speed vs.</div>
+    <div class="seg" id="fcSeg">${d.geom_keys.map((k,i)=>`<button data-k="${k}" class="${i===0?'on':''}">${paramLabel(k)}</button>`).join("")}</div></div>
+    <div class="charthost" id="fcTrend"></div>
+    <div class="legend"><span><i style="background:#DD8452"></i>FEMM</span><span><i style="background:#4C72B0"></i>analytic</span></div>`;
+  det.appendChild(tr);
+  const drawTrend=(k)=>{const ax=paramAxis(k);
+    const mk=(sel,color)=>cells.map(c=>c[sel]==null||c.geom[k]==null?null:({x:c.geom[k]*ax.scale,y:c[sel],r:2.8,color,
+      label:"cell #"+c.cell,meta:[[ax.label,fmtParam(k,c.geom[k])],[sel==="femm_best"?"FEMM":"analytic",fmtNum(c[sel],2)+" m/s"]]})).filter(Boolean);
+    mountScatter($("#fcTrend"),[{name:"FEMM",color:"#DD8452",points:mk("femm_best","#DD8452")},
+      {name:"analytic",color:"#4C72B0",points:mk("analytic_best","#4C72B0")}],
+      {xlabel:ax.label,ylabel:"exit speed (m/s)",xdec:ax.dec,x0:false,y0:true});};
+  drawTrend(d.geom_keys[0]);
+  $("#fcSeg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    $("#fcSeg").querySelectorAll("button").forEach(x=>x.classList.remove("on"));b.classList.add("on");drawTrend(b.dataset.k);});
+  const note=el("div",{class:"card"});
+  note.innerHTML=`<p class="muted small" style="margin:0">This is the dataset behind the standalone design-trends dashboard at <code>studies/femm_trends/dashboard.html</code>, which carries the full multi-factor breakdown.</p>`;
+  det.appendChild(note);
+  wireSvgExports(det);
+}
+
+// ---- keyboard nav (1..6 switch views when not typing) ----
 document.addEventListener("keydown",(e)=>{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
   if(/^(INPUT|SELECT|TEXTAREA)$/.test((e.target.tagName)||""))return;
-  const map={"1":"home","2":"run","3":"sweep","4":"analyze","5":"optimizer"};
+  const map={"1":"home","2":"runs","3":"run","4":"sweep","5":"analyze","6":"optimizer"};
   if(map[e.key])go(map[e.key]);});
 
 // ---- boot ----
