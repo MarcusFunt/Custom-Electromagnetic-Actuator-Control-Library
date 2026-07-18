@@ -29,6 +29,11 @@ mcp = [
 bo = [
   "scikit-optimize>=0.9"
 ]
+rl = [
+  "gymnasium>=0.29",
+  "stable-baselines3>=2.2",
+  "sb3-contrib>=2.2"
+]
 
 [project.scripts]
 emac-phase0 = "emac_sim.cli:main"
@@ -40,6 +45,7 @@ emac-femgen = "emac_sim.fem.cli:main"
 emac-femqc = "emac_sim.fem.quality:main"
 emac-femcheck = "emac_sim.fem.convergence:main"
 emac-gui = "emac_sim.gui.server:main"
+emac-rl-train = "emac_sim.rl.train:main"
 
 [tool.setuptools.packages.find]
 where = ["tools/python"]
