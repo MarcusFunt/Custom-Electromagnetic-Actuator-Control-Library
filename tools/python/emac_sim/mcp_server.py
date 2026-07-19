@@ -32,7 +32,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from scipy.optimize import differential_evolution
 
 from . import coil_design, design_sensitivity, optimize_design
-from .fem.femm_backend import FemmNotAvailableError
+from .fem.femm_backend import FemmBackend, FemmNotAvailableError
 from .fem.geometry import FINE_SPAN_FACTOR, CoilWindingGeometry, SlugGeometry, coupling_scale_m
 from .fem.reference_backend import AnalyticReferenceBackend
 from .linear_estimator import LinearStepperEstimator
@@ -85,7 +85,9 @@ def _load_latest_knobs() -> DesignKnobs:
 
 
 def _fem_coupling_analysis(dk: DesignKnobs, coil_index: int = 0, n_offsets: int = 121,
-                            n_currents: int = 4) -> dict[str, Any]:
+                            n_currents: int = 4, field_lines: bool = False,
+                            field_line_offset_m: Optional[float] = None,
+                            field_line_current_a: Optional[float] = None) -> dict[str, Any]:
     """Force-vs-offset curves for ONE coil of `dk`, at `n_currents` evenly-spaced current
     levels up to dk.i_max_a, under BOTH force laws (see optimize_design.FORCE_LAWS):
     "analytic" via coil_design.build_coil_station's k_a/x_c through plant.q_shape's
@@ -95,7 +97,14 @@ def _fem_coupling_analysis(dk: DesignKnobs, coil_index: int = 0, n_offsets: int 
     since everything here is a function of OFFSET from the coil's own center, not absolute
     position -- see fem/geometry.py's docstrings for why the peak sits away from offset=0.
     coil_index only affects the returned "coil_index"/"n_coils" metadata (every coil in a
-    design_optimizer design shares the same geometry -- see optimize_design.build_params)."""
+    design_optimizer design shares the same geometry -- see optimize_design.build_params).
+
+    field_lines: opt-in (default False, keeps this tool's existing fast/FEMM-free behavior
+    unchanged) real magnetic field lines via FemmBackend.field_lines -- see
+    docs/FEM_PIPELINE.md. Traced at ONE operating point: field_line_offset_m (default 0.0,
+    slug centered on the coil -- the strongest-coupling point) and field_line_current_a
+    (default dk.i_max_a). Requires FEMM installed; if it isn't, "field_lines" is None and
+    "field_lines_note" explains why instead of raising."""
     if not (0 <= coil_index < dk.n_coils):
         raise ValueError(f"coil_index {coil_index} out of range for n_coils={dk.n_coils}")
     if n_offsets < 2:
@@ -142,6 +151,21 @@ def _fem_coupling_analysis(dk: DesignKnobs, coil_index: int = 0, n_offsets: int 
         (peak_fem_reference_n - peak_analytic_n) / peak_analytic_n if peak_analytic_n else None
     )
 
+    resolved_field_line_offset_m = 0.0 if field_line_offset_m is None else field_line_offset_m
+    resolved_field_line_current_a = dk.i_max_a if field_line_current_a is None else field_line_current_a
+    field_lines_result: Optional[list] = None
+    field_lines_note: Optional[str] = None
+    if field_lines:
+        try:
+            with FemmBackend() as backend:
+                field_lines_result = backend.field_lines(
+                    coil_geom, slug_geom, resolved_field_line_offset_m,
+                    resolved_field_line_current_a,
+                )
+        except FemmNotAvailableError:
+            field_lines_note = ("FEMM not installed -- field lines require a real FEMM "
+                                 "solve (see docs/FEM_PIPELINE.md)")
+
     return {
         "kind": "fem_coupling",
         "coil_index": coil_index,
@@ -166,6 +190,10 @@ def _fem_coupling_analysis(dk: DesignKnobs, coil_index: int = 0, n_offsets: int 
         "peak_analytic_n": peak_analytic_n,
         "peak_fem_reference_n": peak_fem_reference_n,
         "peak_relative_difference": peak_relative_difference,
+        "field_lines": field_lines_result,
+        "field_lines_note": field_lines_note,
+        "field_line_offset_m": resolved_field_line_offset_m if field_lines else None,
+        "field_line_current_a": resolved_field_line_current_a if field_lines else None,
     }
 
 
@@ -516,7 +544,8 @@ def sensitivity_sweep(
 @mcp.tool()
 def fem_coupling_analysis(
     knobs: Optional[dict[str, Any]] = None, coil_index: int = 0,
-    n_offsets: int = 121, n_currents: int = 4,
+    n_offsets: int = 121, n_currents: int = 4, field_lines: bool = False,
+    field_line_offset_m: Optional[float] = None, field_line_current_a: Optional[float] = None,
 ) -> dict[str, Any]:
     """Compare the analytic coupling-shape estimate (coil_design.build_coil_station's k_a/
     x_c through plant.q_shape's Gaussian lobe -- what every simulation uses unless it opts
@@ -530,10 +559,21 @@ def fem_coupling_analysis(
     knobs defaults to the latest run_optimization result's best_knobs (same fallback
     simulate_design_detailed/sensitivity_sweep use). Also writes a JSON snapshot to
     build/fem_lut/latest_analysis.json (same load-a-file pattern as run_optimization) for
-    the "FEM coupling curve" view of the EMAC Optimizer Dashboard artifact."""
+    the "FEM coupling curve" view of the EMAC Optimizer Dashboard artifact.
+
+    field_lines: opt-in (default False -- no added FEMM cost unless requested) real
+    magnetic field lines traced through a real FEMM solve at one operating point
+    (field_line_offset_m, default 0.0 = slug centered on the coil; field_line_current_a,
+    default the design's i_max_a) -- useful both to see what the FEM solve actually looks
+    like and for building intuition when designing a control scheme for the electromagnets
+    driving the PM slug. Needs FEMM installed; if it isn't, the result's "field_lines" is
+    null and "field_lines_note" explains why, rather than raising. See
+    docs/FEM_PIPELINE.md."""
     dk = DesignKnobs(**knobs) if knobs else _load_latest_knobs()
     result = _fem_coupling_analysis(dk, coil_index=coil_index, n_offsets=n_offsets,
-                                     n_currents=n_currents)
+                                     n_currents=n_currents, field_lines=field_lines,
+                                     field_line_offset_m=field_line_offset_m,
+                                     field_line_current_a=field_line_current_a)
     FEM_LATEST_PATH.write_text(json.dumps(result, indent=2))
     result["results_file"] = str(FEM_LATEST_PATH)
     return result

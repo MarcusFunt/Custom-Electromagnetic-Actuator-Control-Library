@@ -21,6 +21,9 @@ on a body fully surrounded by air, used throughout FEMM's own PM-actuator exampl
 
 from __future__ import annotations
 
+import math
+from typing import Callable
+
 from .backend import ForcePoint
 from .geometry import CoilWindingGeometry, SlugGeometry
 
@@ -30,6 +33,84 @@ MU_0 = 4.0e-7 * 3.141592653589793
 
 _SLUG_GROUP = 1
 _COIL_GROUP = 2
+
+# field_lines() defaults -- see FemmBackend.field_lines below. max_points is deliberately
+# modest: the dashboard schematic only ever shows a padded near-field view around the
+# coil/magnet (roughly 1.25x their own dimensions), so tracing far into FEMM's much larger
+# solved domain (6x margin, see _AIR_MARGIN_FACTOR) just adds mo_getb calls (wall-clock
+# cost) and JSON payload for a curve segment that gets clipped by the SVG viewport anyway.
+_FIELD_LINE_N_DEFAULT = 14
+_FIELD_LINE_MAX_POINTS = 80
+_FIELD_LINE_B_FLOOR_T = 1e-6   # stop tracing once |B| decays below this (avoid a runaway
+                               # unit-vector normalization once the field is negligible)
+
+
+def _trace_field_line(
+    b_field_fn: Callable[[float, float], tuple[float, float]],
+    seed: tuple[float, float],
+    step_m: float,
+    direction: float,
+    in_bounds: Callable[[float, float], bool],
+    max_points: int = _FIELD_LINE_MAX_POINTS,
+) -> list[tuple[float, float]]:
+    """RK4-integrate a single field line from `seed = (r_m, z_m)` in the meridian
+    half-plane, stepping along `direction * (Br,Bz)/|B|` (direction is +1.0 or -1.0 -- a
+    field line is traced both ways from its seed and the two halves are joined by the
+    caller). Takes a plain `b_field_fn: (r,z) -> (br,bz)` callable rather than the femm
+    module directly, so this is unit-testable with a synthetic field and needs no FEMM
+    installation. Stops when `in_bounds` goes false (left the solved domain, or crossed the
+    r=0 symmetry axis), |B| decays below _FIELD_LINE_B_FLOOR_T, or max_points is hit."""
+
+    def unit_b(r: float, z: float) -> tuple[float, float] | None:
+        if not in_bounds(r, z):
+            return None
+        br, bz = b_field_fn(r, z)
+        mag = math.hypot(br, bz)
+        if mag < _FIELD_LINE_B_FLOOR_T:
+            return None
+        return (direction * br / mag, direction * bz / mag)
+
+    points = [seed]
+    r, z = seed
+    for _ in range(max_points - 1):
+        k1 = unit_b(r, z)
+        if k1 is None:
+            break
+        k2 = unit_b(r + 0.5 * step_m * k1[0], z + 0.5 * step_m * k1[1])
+        if k2 is None:
+            break
+        k3 = unit_b(r + 0.5 * step_m * k2[0], z + 0.5 * step_m * k2[1])
+        if k3 is None:
+            break
+        k4 = unit_b(r + step_m * k3[0], z + step_m * k3[1])
+        if k4 is None:
+            break
+        dr = (step_m / 6.0) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
+        dz = (step_m / 6.0) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])
+        r, z = r + dr, z + dz
+        if not in_bounds(r, z):
+            break
+        points.append((r, z))
+    return points
+
+
+def _perimeter_seeds(magnet_radius_m: float, z0: float, z1: float,
+                      n: int) -> list[tuple[float, float]]:
+    """`n` seed points evenly spaced along the magnet's REAL boundary faces -- the bottom
+    cap (z=z0, r: 0->R), the outer curved side (r=R, z: z0->z1), and the top cap (z=z1,
+    r: R->0) -- deliberately excluding the r=0 edge itself, which is the symmetry axis, not
+    a physical surface of the magnet."""
+    total = 2.0 * magnet_radius_m + (z1 - z0)
+    seeds = []
+    for k in range(n):
+        s = total * (k + 0.5) / n   # offset by half a step so no seed lands exactly on a corner
+        if s < magnet_radius_m:
+            seeds.append((s, z0))
+        elif s < magnet_radius_m + (z1 - z0):
+            seeds.append((magnet_radius_m, z0 + (s - magnet_radius_m)))
+        else:
+            seeds.append((magnet_radius_m - (s - magnet_radius_m - (z1 - z0)), z1))
+    return seeds
 
 
 class FemmNotAvailableError(RuntimeError):
@@ -77,10 +158,13 @@ class FemmBackend:
         if not self.keep_open:
             self.close()
 
-    def solve(self, coil: CoilWindingGeometry, slug: SlugGeometry,
-              offset_m: float, current_a: float) -> ForcePoint:  # pragma: no cover
+    def _build_and_solve(self, coil: CoilWindingGeometry, slug: SlugGeometry,
+                          offset_m: float, current_a: float) -> tuple[float, float]:  # pragma: no cover
+        """Shared setup for solve() and field_lines(): build the mesh, run mi_analyze, and
+        load the solution so mo_* postprocessor calls work. Returns (outer_r, half_extent)
+        -- the drawn air-boundary box, in meters -- so callers know the solved domain's
+        extent (field_lines uses it to stop a trace once it leaves the domain)."""
         femm = self._femm
-        self._ensure_open()
 
         femm.newdocument(0)  # 0 = magnetics problem
         femm.mi_probdef(0, "meters", "axi", 1e-8, 0, 30)
@@ -160,8 +244,55 @@ class FemmBackend:
         femm.mi_analyze(1)
         femm.mi_loadsolution()
 
+        return outer_r, half_extent
+
+    def solve(self, coil: CoilWindingGeometry, slug: SlugGeometry,
+              offset_m: float, current_a: float) -> ForcePoint:  # pragma: no cover
+        femm = self._femm
+        self._ensure_open()
+        self._build_and_solve(coil, slug, offset_m, current_a)
+
         femm.mo_groupselectblock(_SLUG_GROUP)
         force_n = femm.mo_blockintegral(19)  # axial weighted stress tensor force
         femm.mo_clearblock()
 
         return ForcePoint(force_n=float(force_n))
+
+    def field_lines(
+        self, coil: CoilWindingGeometry, slug: SlugGeometry, offset_m: float, current_a: float,
+        n_lines: int = _FIELD_LINE_N_DEFAULT, max_points: int = _FIELD_LINE_MAX_POINTS,
+        step_m: float | None = None,
+    ) -> list[list[tuple[float, float]]]:  # pragma: no cover
+        """Trace `n_lines` real magnetic field lines through the (r,z) meridian half-plane
+        at this operating point, via RK4 integration along FEMM's `mo_getb` (see
+        _trace_field_line). Seeds are spread evenly around the slug magnet's drawn
+        rectangular boundary (the field source closest to what a control-scheme designer
+        cares about -- how the PM couples to the coil), each traced in both directions
+        until it leaves the solved domain, crosses the r=0 symmetry axis, or the field
+        decays away. Returns one polyline per line, each a list of (r_m, z_m) points."""
+        femm = self._femm
+        self._ensure_open()
+        outer_r, half_extent = self._build_and_solve(coil, slug, offset_m, current_a)
+
+        def b_field(r: float, z: float) -> tuple[float, float]:
+            br, bz = femm.mo_getb(r, z)
+            return float(br), float(bz)
+
+        def in_bounds(r: float, z: float) -> bool:
+            return 0.0 <= r <= outer_r and -half_extent <= z <= half_extent
+
+        step = step_m or 0.1 * min(coil.radial_thickness_m, slug.magnet_radius_m)
+
+        slug_z0 = -offset_m - 0.5 * slug.magnet_length_m
+        slug_z1 = -offset_m + 0.5 * slug.magnet_length_m
+        seeds = _perimeter_seeds(slug.magnet_radius_m, slug_z0, slug_z1, n_lines)
+
+        lines: list[list[tuple[float, float]]] = []
+        for seed in seeds:
+            forward = _trace_field_line(b_field, seed, step, +1.0, in_bounds, max_points)
+            backward = _trace_field_line(b_field, seed, step, -1.0, in_bounds, max_points)
+            line = list(reversed(backward[1:])) + forward
+            if len(line) >= 2:
+                lines.append(line)
+
+        return lines

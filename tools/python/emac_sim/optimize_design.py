@@ -274,19 +274,23 @@ def build_params(knobs: DesignKnobs, force_law: str = "analytic") -> LinearActua
 
 
 def simulate_design(knobs: DesignKnobs, dt: float = 2e-4, t_end: float = 3.0,
-                     bootstrap_timeout_s: float = 0.05, force_law: str = "analytic") -> float:
+                     bootstrap_timeout_s: float = 0.05, force_law: str = "analytic",
+                     push_pull: bool = False) -> float:
     """Exit speed (m/s) at the last gate, or 0.0 if the run FAULTed or never cleared a
     single gate (an infeasible or too-weak design) -- pushes the search away from that
     region the same way an explicit penalty would, without a separate constraint mechanism.
     `bootstrap_timeout_s` defaults short (vs. StepperSupervisor's own 0.20s) so hopeless
     candidates fail fast during a large search; pass the default back in for a final,
-    more patient verification run. `force_law`: see build_params / FORCE_LAWS."""
+    more patient verification run. `force_law`: see build_params / FORCE_LAWS.
+    `push_pull` (default False): opt into two-coil push-pull commutation (a departing coil
+    repels from behind WHILE the next coil attracts from ahead) -- see
+    StepperSupervisor.push_pull. Off by default, so the search behaves exactly as before."""
     p = build_params(knobs, force_law=force_law)
     pitch = knobs.coil_length_m
     x0 = -0.5 * pitch - 0.001
     est = LinearStepperEstimator([g.position_m for g in p.gates], [g.w_eff for g in p.gates])
     sup = StepperSupervisor(p, i_max=knobs.i_max_a, pm_envelope=knobs.pump_envelope,
-                            bootstrap_timeout_s=bootstrap_timeout_s)
+                            bootstrap_timeout_s=bootstrap_timeout_s, push_pull=push_pull)
     sim = LinearSimulator(p, est, sup, dt=dt, sample_every=1_000_000)
     log = sim.run(x0=x0, v0=0.0, v_tgt=V_TGT_FULL_THRUST, t_end=t_end)
     if sup.mode == FAULT or not log.gate_t:

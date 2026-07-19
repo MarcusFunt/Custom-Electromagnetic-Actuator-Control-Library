@@ -312,6 +312,39 @@ def test_departure_repel_is_scheduled_and_fires_after_the_approach_pump_cuts():
     assert out.cmd.t0 == pytest.approx(t_arrival)
 
 
+def test_active_outputs_is_single_output_when_push_pull_is_off():
+    """Default (push_pull=False): active_outputs must be exactly [self.active] -- the
+    single-coil contract the simulator has always relied on, so the default path is
+    byte-for-byte unchanged."""
+    p = LinearActuatorParams()
+    sup = StepperSupervisor(p)   # push_pull defaults to False
+    sup.start(0.0)
+    assert sup.active_outputs(0.0) == [sup.active]
+
+
+def test_active_outputs_exposes_every_live_pulse_when_push_pull_is_on():
+    """push_pull=True: active_outputs returns every coil whose scheduled pulse is still
+    within its own [t0,t1] window at the query time, with the correct (signed) currents --
+    a repel-behind and an attract-ahead overlapping give two outputs of opposite sign --
+    and drops pulses that have expired."""
+    from emac_sim.supervisor import PulseCmd
+
+    p = LinearActuatorParams()
+    sup = StepperSupervisor(p, push_pull=True)
+    # coil 0: a repel (negative) pulse live over [0.00, 0.02]
+    sup._pulses[0] = PulseCmd(True, "pump", 0.00, 0.02, 0.02, 5.0, 0.0, "rcos", "repel")
+    # coil 1: an attract (positive) pulse live over [0.01, 0.03]
+    sup._pulses[1] = PulseCmd(True, "pump", 0.01, 0.03, 0.02, 5.0, 0.0, "rcos", "attract")
+
+    # t = 0.015: both windows overlap -> two outputs, opposite current signs
+    by_coil = {o.coil_index: current_at(0.015, o.cmd) for o in sup.active_outputs(0.015)}
+    assert set(by_coil) == {0, 1}
+    assert by_coil[0] < 0.0 < by_coil[1]
+
+    # t = 0.025: coil 0's pulse has expired -> only coil 1 remains live
+    assert [o.coil_index for o in sup.active_outputs(0.025)] == [1]
+
+
 def test_departure_repel_is_not_scheduled_for_a_pure_reluctance_coil():
     """Reluctance-only stations (k_a=0) can't repel at all -- attract-only regardless of
     current sign -- so no departure kick should ever be scheduled for one."""

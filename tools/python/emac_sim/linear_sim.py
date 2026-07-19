@@ -55,6 +55,11 @@ class LinearSimLog:
     active_coil: List[int] = field(default_factory=list)
     active_current: List[float] = field(default_factory=list)
     active_temperature_c: List[float] = field(default_factory=list)
+    # Full per-coil current vector at each sample (one list per sampled tick). Lets a
+    # visualization draw EVERY energized coil, not just the single "primary" active_coil --
+    # the point of push-pull is that two coils can be nonzero at once. Same length/cadence
+    # as `t`; each inner list has len == number of coils.
+    coil_currents: List[List[float]] = field(default_factory=list)
     x_est: List[float] = field(default_factory=list)
     status: List[str] = field(default_factory=list)
     # per-gate records
@@ -93,8 +98,17 @@ class LinearSimulator:
         min_x_c = min((c.x_c for c in p.coils), default=1.0)
 
         while t < t_end:
-            out = sup.tick(t)
-            i_target = current_at(t, out.cmd)
+            out = sup.tick(t)   # PRIMARY output: drives logging, the gate pulsed flag, mode
+
+            # Per-coil current TARGETS. With push_pull off this is exactly `[out]` -> one
+            # nonzero entry at out.coil_index == the old single-coil behavior. With it on,
+            # every coil whose scheduled pulse is still live contributes, so a repel-behind
+            # and an attract-ahead can be commanded at the same tick (see
+            # StepperSupervisor.active_outputs).
+            targets = [0.0] * n_coils
+            for o in sup.active_outputs(t):
+                if 0 <= o.coil_index < n_coils:
+                    targets[o.coil_index] = current_at(t, o.cmd)
 
             # Resistance at each coil's CURRENT temperature, computed once per tick and
             # reused for both the electrical step below (if "rl") and the thermal step's
@@ -105,19 +119,18 @@ class LinearSimulator:
 
             if p.current_loop == "rl":
                 for k in range(n_coils):
-                    target_k = i_target if k == out.coil_index else 0.0
                     r_override = resistances[k] if resistances is not None else None
                     currents[k] = linear_plant.coil_current_step(
-                        currents[k], target_k, p.coils[k], p.bus_voltage_v, self.dt,
+                        currents[k], targets[k], p.coils[k], p.bus_voltage_v, self.dt,
                         bipolar=p.driver_bipolar, resistance_ohm_override=r_override,
                     )
             else:
                 currents = [0.0] * n_coils
-                if 0 <= out.coil_index < n_coils:
-                    i_val = i_target
+                for k in range(n_coils):
+                    i_val = targets[k]
                     if not p.driver_bipolar and i_val < 0.0:
                         i_val = 0.0     # single-ended driver: no negative rail even under "ideal"
-                    currents[out.coil_index] = i_val
+                    currents[k] = i_val
 
             if resistances is not None:
                 for k in range(n_coils):
@@ -173,6 +186,7 @@ class LinearSimulator:
                 log.v.append(v)
                 log.active_coil.append(out.coil_index)
                 log.active_current.append(i_active)
+                log.coil_currents.append(list(currents))
                 t_active = (temperatures[out.coil_index] if 0 <= out.coil_index < n_coils
                             else p.ambient_temperature_c)
                 log.active_temperature_c.append(t_active)

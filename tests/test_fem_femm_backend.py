@@ -1,6 +1,11 @@
 import pytest
 
-from emac_sim.fem.femm_backend import FemmBackend, FemmNotAvailableError
+from emac_sim.fem.femm_backend import (
+    FemmBackend,
+    FemmNotAvailableError,
+    _perimeter_seeds,
+    _trace_field_line,
+)
 from emac_sim.fem.geometry import CoilWindingGeometry, SlugGeometry
 from emac_sim.fem.reference_backend import AnalyticReferenceBackend
 
@@ -55,3 +60,69 @@ def test_femm_backend_force_sign_matches_reference_backend():
                 f"offset_m={offset_m}: femm={femm_point.force_n} and "
                 f"reference={reference_point.force_n} have opposite signs"
             )
+
+
+def test_trace_field_line_follows_a_synthetic_uniform_field():
+    """_trace_field_line takes a plain (r,z) -> (br,bz) callable, not the femm module --
+    verify its RK4 integration is correct against a trivial synthetic field (no FEMM
+    needed, always runs): a uniform field pointing in +z should trace a straight line of
+    constant r, monotonically increasing z, stepping roughly step_m per point."""
+    def uniform_bz(r, z):
+        return (0.0, 1.0)
+
+    def in_bounds(r, z):
+        return -1.0 <= r <= 1.0 and -1.0 <= z <= 1.0
+
+    seed = (0.1, 0.0)
+    step_m = 0.05
+    line = _trace_field_line(uniform_bz, seed, step_m, +1.0, in_bounds, max_points=20)
+
+    assert len(line) == 20
+    for r, _z in line:
+        assert r == pytest.approx(0.1, abs=1e-9)
+    zs = [z for _r, z in line]
+    assert zs == sorted(zs)
+    assert zs[-1] == pytest.approx((len(line) - 1) * step_m, abs=1e-9)
+
+
+def test_trace_field_line_stops_when_leaving_bounds():
+    def uniform_bz(r, z):
+        return (0.0, 1.0)
+
+    def in_bounds(r, z):
+        return z <= 0.12
+
+    line = _trace_field_line(uniform_bz, (0.0, 0.0), 0.05, +1.0, in_bounds, max_points=100)
+    assert 2 <= len(line) < 100
+    assert all(z <= 0.12 for _r, z in line)
+
+
+def test_perimeter_seeds_stay_on_the_magnets_real_boundary_faces():
+    """Seeds must land on the magnet's physical surface (bottom cap, outer side, top cap)
+    and never on the r=0 symmetry axis (not a real boundary) or outside [z0,z1]/[0,R]."""
+    seeds = _perimeter_seeds(magnet_radius_m=0.01, z0=-0.02, z1=0.02, n=12)
+    assert len(seeds) == 12
+    for r, z in seeds:
+        assert 0.0 <= r <= 0.01 + 1e-12
+        assert -0.02 - 1e-12 <= z <= 0.02 + 1e-12
+        on_bottom_cap = z == pytest.approx(-0.02)
+        on_top_cap = z == pytest.approx(0.02)
+        on_outer_side = r == pytest.approx(0.01)
+        assert on_bottom_cap or on_top_cap or on_outer_side
+
+
+def test_femm_backend_traces_field_lines_when_femm_is_installed():
+    pytest.importorskip("femm")
+
+    slug = SlugGeometry(magnet_radius_m=0.008, magnet_length_m=0.020, remanence_t=1.2)
+    coil = CoilWindingGeometry(position_m=0.0, turns=200, coil_length_m=0.020, radial_thickness_m=0.010)
+
+    with FemmBackend() as backend:
+        lines = backend.field_lines(coil, slug, offset_m=0.0, current_a=5.0, n_lines=8)
+
+    assert len(lines) > 0
+    for line in lines:
+        assert len(line) >= 2
+        for r, z in line:
+            assert r == r and z == z  # not NaN
+            assert r >= -1e-9

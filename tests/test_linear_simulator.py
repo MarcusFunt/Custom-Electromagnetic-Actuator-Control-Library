@@ -65,7 +65,7 @@ def test_brake_hold_reduces_overshoot_and_speed_versus_coast():
 
 
 def test_log_field_lengths_are_consistent():
-    _, _, log = run_default()
+    p, _, log = run_default()
 
     n = len(log.t)
     assert len(log.x) == n
@@ -73,6 +73,8 @@ def test_log_field_lengths_are_consistent():
     assert len(log.active_coil) == n
     assert len(log.active_current) == n
     assert len(log.active_temperature_c) == n
+    assert len(log.coil_currents) == n
+    assert all(len(row) == len(p.coils) for row in log.coil_currents)
     assert len(log.x_est) == n
     assert len(log.status) == n
     assert len(log.supervisor_mode) == n
@@ -160,3 +162,79 @@ def test_thermal_model_resistance_rise_lags_a_pure_rl_run_with_the_same_current(
     log_hot = run(thermal_model=True)
 
     assert log_hot.active_current != log_cold.active_current
+
+
+def _max_simultaneous_coils(log) -> int:
+    """The most coils carrying nonzero current at any single sampled tick."""
+    return max((sum(1 for i in row if abs(i) > 1e-9) for row in log.coil_currents), default=0)
+
+
+def run_push_pull(push_pull: bool, current_loop: str | None = None):
+    """A genuinely strong design (real coil_design geometry, 10 A cap) -- the default
+    LinearActuatorParams is far too weak to pump hard enough to exhibit (or benefit from)
+    two-coil overlap. Same design/fidelity the push-pull video uses, so the test exercises
+    the real configuration, not a toy one. `current_loop` optionally overrides build_params'
+    "rl" default (used by the ideal-mode control test below)."""
+    import dataclasses
+
+    from emac_sim.optimize_design import DesignKnobs, build_params
+
+    knobs = DesignKnobs(bus_voltage_v=48.0, driver_bipolar=True, pump_envelope="rcos",
+                         n_coils=8, turns=180, coil_length_m=0.02, radial_thickness_m=0.01,
+                         magnet_radius_m=0.008, magnet_length_m=0.02, remanence_t=1.2,
+                         i_max_a=10.0)
+    p = build_params(knobs, force_law="analytic")
+    if current_loop is not None:
+        p = dataclasses.replace(p, current_loop=current_loop)
+    pitch = knobs.coil_length_m
+    est = LinearStepperEstimator(
+        gate_positions=[g.position_m for g in p.gates],
+        gate_widths=[g.w_eff for g in p.gates],
+    )
+    sup = StepperSupervisor(p, i_max=knobs.i_max_a, pm_envelope=knobs.pump_envelope,
+                            bootstrap_timeout_s=0.20, push_pull=push_pull)
+    sim = LinearSimulator(p, est, sup, dt=2e-5, sample_every=1)
+    log = sim.run(x0=-0.5 * pitch - 0.001, v0=0.0, v_tgt=100.0, t_end=0.09)
+    return p, sup, log
+
+
+def test_push_pull_off_drives_one_coil_at_a_time_under_ideal_current():
+    """Control for the test below: with 'ideal' current (no RL decay tails to confound),
+    the single-coil scheme drives at most ONE coil per tick -- confirming the two-coil
+    overlap under push_pull is the scheme genuinely targeting two coils, not a plant
+    artifact. (Under 'rl', a just-deactivated coil's decaying current can transiently
+    overlap the next coil's ramp even without push-pull -- current can't jump to zero --
+    which is a property of the RL circuit, not of the commutation scheme, so this control
+    isolates the scheme by using ideal current.)"""
+    _, sup, log = run_push_pull(push_pull=False, current_loop="ideal")
+    assert sup.mode != FAULT
+    assert _max_simultaneous_coils(log) <= 1
+
+
+def test_push_pull_on_drives_two_coils_at_once_even_under_ideal_current():
+    """The mechanism, isolated from RL decay: even under 'ideal' current, push_pull=True
+    targets (and so energizes) two coils at the same tick -- impossible for the single-coil
+    scheme above."""
+    _, sup, log = run_push_pull(push_pull=True, current_loop="ideal")
+    assert sup.mode != FAULT
+    assert _max_simultaneous_coils(log) >= 2
+
+
+def test_push_pull_on_energizes_two_coils_at_once_and_still_clears_every_gate():
+    """The core of two-coil push-pull: many ticks have TWO+ coils driven at once (a
+    repel-behind overlapping the next coil's attract-ahead), which the single-coil scheme
+    can never produce -- and the run still clears every gate without FAULT."""
+    p, sup, log = run_push_pull(push_pull=True)
+    assert sup.mode != FAULT
+    assert len(log.gate_t) == len(p.gates)
+    assert _max_simultaneous_coils(log) >= 2
+
+
+def test_push_pull_reaches_a_higher_exit_speed_than_single_coil_on_the_same_design():
+    """The payoff: using the previously-idle between-coil gaps to push-and-pull at once
+    should extract more forward impulse, so exit speed under push_pull=True must exceed the
+    single-coil scheme's on an identical design (measured ~7.2 vs ~5.2 m/s)."""
+    _, _, log_single = run_push_pull(push_pull=False)
+    _, _, log_pp = run_push_pull(push_pull=True)
+    assert log_single.gate_v and log_pp.gate_v
+    assert log_pp.gate_v[-1] > log_single.gate_v[-1]

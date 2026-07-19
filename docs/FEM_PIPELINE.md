@@ -202,6 +202,31 @@ load-a-file pattern `run_optimization` uses. Open that file in
 No server or build step -- open the HTML file directly, same as every other view in the
 dashboard.
 
+### Field lines (real FEMM only)
+
+Pass `field_lines=true` to `fem_coupling_analysis` to overlay REAL traced magnetic field
+lines on the cross-section schematic -- not an approximation, and not the analytic/
+fem_reference path: `fem.femm_backend.FemmBackend.field_lines` runs an actual FEMM solve at
+one operating point and RK4-integrates along FEMM's own `mo_getb(r,z)` postprocessor
+(confirmed present and working via `pyfemm`), seeded evenly around the magnet's real
+boundary faces (bottom cap, outer side, top cap -- never the r=0 symmetry axis, which isn't
+a physical surface). Useful for two things: seeing what the FEM solve actually looks like
+(rather than trusting a scalar force number), and building intuition for control-scheme
+design on the electromagnets driving the PM slug -- where the field points and how strong
+it is at a given offset/current is exactly what governs how you'd want to sequence or shape
+coil currents.
+
+Parameters: `field_line_offset_m` (default `0.0` -- slug centered on the coil, the
+strongest-coupling operating point) and `field_line_current_a` (default the design's
+`i_max_a`). Default `field_lines=false` -- this is opt-in and adds real FEMM wall-clock
+time (a handful of seconds; each line traces up to `_FIELD_LINE_MAX_POINTS` RK4 steps in
+each direction, deliberately capped low since the schematic only ever shows a padded
+near-field view, not FEMM's full 6x-margin solved domain -- points beyond the visible area
+are wasted compute). Requires FEMM installed: without it, the result's `"field_lines"` is
+`null` and `"field_lines_note"` explains why (same null-plus-note pattern as
+`run_optimization`'s `femm_speed_m_s`/`femm_note` -- see "Verifying the winning design
+against real FEMM" above) rather than raising or silently omitting the field.
+
 ## Known limitations
 
 - PM branch only. The reluctance branch (`Cmag`, soft-iron slugs) isn't modeled here yet --

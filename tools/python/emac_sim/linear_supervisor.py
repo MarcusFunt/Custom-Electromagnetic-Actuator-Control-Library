@@ -34,7 +34,7 @@ from dataclasses import dataclass
 
 from .linear_estimator import LinearStepperEstimator
 from .linear_plant import CoilStation, LinearActuatorParams
-from .supervisor import PulseCmd, _q_window_integral, envelope_average_linear
+from .supervisor import PulseCmd, _q_window_integral, current_at, envelope_average_linear
 
 BOOTSTRAP = "BOOTSTRAP"
 RUN = "RUN"
@@ -88,7 +88,7 @@ class StepperSupervisor:
     def __init__(self, p: LinearActuatorParams, k_v: float = 0.30, T_p_frac: float = 0.30,
                  phase_advance_s: float = 0.002, i_max: float = 6.0,
                  bootstrap_dwell_s: float = 0.05, bootstrap_timeout_s: float = 0.20,
-                 pm_envelope: str = "rcos"):
+                 pm_envelope: str = "rcos", push_pull: bool = False):
         self.p = p
         self.k_v = k_v
         self.T_p_frac = T_p_frac
@@ -96,6 +96,20 @@ class StepperSupervisor:
         self.i_max = i_max
         self.bootstrap_dwell_s = bootstrap_dwell_s
         self.bootstrap_timeout_s = bootstrap_timeout_s
+        # Opt-in two-coil push-pull (default False -> byte-for-byte the single-coil scheme
+        # every existing test asserts). When True, `active_outputs` exposes EVERY coil whose
+        # scheduled pulse is still live at the query time -- so a departing coil's repel kick
+        # (push from behind) and the next coil's approach pump (pull from ahead) can drive
+        # SIMULTANEOUSLY during the between-station gap, instead of the departure-repel and
+        # the next approach-attract clobbering each other through the single `self.active`.
+        # This changes NOTHING about how pulses are scheduled (tick/on_gate/_run_step/
+        # _fire_departure are untouched) -- only whether concurrently-live ones are all
+        # applied. See docs/DESIGN_LINEAR.md and _pulses/active_outputs below.
+        self.push_pull = push_pull
+        # coil_index -> that coil's most recently scheduled pulse. Recorded by _set_active on
+        # every schedule; entries self-expire because current_at() returns 0 outside a
+        # pulse's [t0, t1] window, so active_outputs just filters to the currently-live ones.
+        self._pulses: dict[int, PulseCmd] = {}
         # Current envelope used whenever a station's PM branch is active (k_lin>0):
         # "rcos" (default, smooth force) | "trapezoid" | "square" (both unsmoothed, more
         # average current per i_peak -- a genuine speed-vs-vibration knob). Reluctance-only
@@ -115,6 +129,28 @@ class StepperSupervisor:
         self._departure_est = None      # estimator reference, for predict()ing velocity at fire time
         self._last_v_tgt = 0.0
 
+    def _set_active(self, out: StepperOutput) -> StepperOutput:
+        """Single choke point for updating the commanded output: sets `self.active` (the
+        primary, single-coil output every existing caller/test reads) AND records the pulse
+        into the per-coil registry that `active_outputs` reads for push-pull. Recording
+        happens regardless of `push_pull` -- it's write-only unless push_pull is on, so the
+        default path stays behaviourally identical."""
+        self.active = out
+        self._pulses[out.coil_index] = out.cmd
+        return out
+
+    def active_outputs(self, t: float) -> list[StepperOutput]:
+        """Every coil that should be driven right now. With push_pull off this is exactly
+        `[self.active]` -- the single-coil behavior the simulator has always had. With it on,
+        it's every coil whose scheduled pulse is still within its own time window at `t`
+        (so a repel-behind and an attract-ahead overlap during the gap transit); it falls
+        back to `[self.active]` when nothing is live, so bootstrap/coast are still represented."""
+        if not self.push_pull:
+            return [self.active]
+        live = [StepperOutput(idx, cmd) for idx, cmd in self._pulses.items()
+                if current_at(t, cmd) != 0.0]
+        return live if live else [self.active]
+
     def start(self, t: float) -> None:
         """Call once before the run starts to arm the first bootstrap pulse."""
         self.mode = BOOTSTRAP
@@ -128,11 +164,11 @@ class StepperSupervisor:
     def _arm_bootstrap(self, t: float) -> None:
         _, k_lin = self.K_pump[self._bootstrap_coil]
         envelope = self.pm_envelope if k_lin > 1e-15 else "sqrt_rcos"
-        self.active = StepperOutput(
+        self._set_active(StepperOutput(
             self._bootstrap_coil,
             PulseCmd(True, "pump", t, t + self.bootstrap_dwell_s, self.bootstrap_dwell_s,
                      self.i_max, 0.0, envelope),
-        )
+        ))
 
     def tick(self, t: float) -> StepperOutput:
         """Call every fast control tick; advances the bootstrap FSM on timeout (a gate
@@ -144,7 +180,7 @@ class StepperSupervisor:
             self._attempts += 1
             if self._attempts >= len(self.p.coils):
                 self.mode = FAULT
-                self.active = StepperOutput(0, _COAST)
+                self._set_active(StepperOutput(0, _COAST))
             else:
                 self._bootstrap_coil = (self._bootstrap_coil + 1) % len(self.p.coils)
                 self._bootstrap_t0 = t
@@ -153,11 +189,22 @@ class StepperSupervisor:
         if self.mode == RUN and self._pending_departure is not None:
             coil_index, t_arrival = self._pending_departure
             if t >= t_arrival:
-                self.active = self._fire_departure(coil_index, t_arrival)
+                self._set_active(self._fire_departure(coil_index, t_arrival))
+                if self.push_pull:
+                    # The slug has now passed coil_index, so it's the only coil that should
+                    # push from behind -- retire every EARLIER coil's (deliberately gap-
+                    # spanning, so potentially still-open) repel pulse. Without this, a coil
+                    # whose repel window was sized from a slow early speed (T_p = gap/v_hat,
+                    # huge when v_hat is tiny at launch) keeps drawing current long after the
+                    # slug is many stations downrange -- negligible force from that far back,
+                    # but wasted energy (a real coil would overheat) and a misleading "still
+                    # driving" in any visualization. Bounds it to one push coil + one pull.
+                    for j in [k for k in self._pulses if k < coil_index]:
+                        del self._pulses[j]
                 self._pending_departure = None
 
         if self.mode == RUN and self._final_arrival is not None and t >= self._final_arrival:
-            self.active = self._end_of_travel(self._final_arrival)
+            self._set_active(self._end_of_travel(self._final_arrival))
             self._final_arrival = None
 
         return self.active
@@ -175,7 +222,7 @@ class StepperSupervisor:
             return self.active
 
         self._last_v_tgt = v_tgt
-        self.active = self._run_step(gate_index, est, t, v_tgt)
+        self._set_active(self._run_step(gate_index, est, t, v_tgt))
 
         # Schedule this SAME coil's departure-repel kick (PM branch only -- reluctance
         # can't repel) for once dead-reckoning says its center has been reached, which is
@@ -242,6 +289,17 @@ class StepperSupervisor:
             return StepperOutput(coil_index, _COAST)
 
         T_p = coil.x_c / max(abs(v_hat), 1e-6)   # same lobe-traversal-time sizing as brake_hold
+        if self.push_pull and coil_index + 1 < len(self.p.coils):
+            # Two-coil push-pull: stretch the repel (push-from-behind) so it spans the whole
+            # gap to the NEXT coil, overlapping that coil's approach-attract (pull-from-ahead)
+            # instead of finishing during the coast between them (which is why the naive
+            # "just don't clobber" version produced ZERO simultaneous drive -- the two pulses
+            # were never temporally adjacent). Force stays forward the entire span: the slug
+            # is downrange of this coil the whole time (q_shape<0, repel current<0 -> forward),
+            # just decaying with distance -- so there's no new attract-past-center / backward-
+            # force risk, only forward push using the previously-idle gap. Off unless push_pull.
+            gap = self.p.coils[coil_index + 1].position_m - coil.position_m
+            T_p = abs(gap) / max(abs(v_hat), 1e-6)
         i_peak = _i_peak_for_energy(dE_cmd, 0.0, k_lin, self.i_max)
         return StepperOutput(coil_index,
                               PulseCmd(True, "pump", t_arrival, t_arrival + T_p, T_p,

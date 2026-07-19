@@ -257,3 +257,42 @@ def test_fem_coupling_analysis_defaults_knobs_to_latest_result(isolated_results_
 def test_fem_coupling_analysis_rejects_out_of_range_coil_index():
     with pytest.raises(ValueError, match="coil_index"):
         m.fem_coupling_analysis(knobs=m._knobs_dict(DEFAULT_KNOBS), coil_index=99)
+
+
+def test_fem_coupling_analysis_field_lines_default_off_leaves_result_unaffected(isolated_results_file):
+    """field_lines defaults to False -- must add zero FEMM cost/behavior change for every
+    existing caller (dashboard loads, sensitivity views) that doesn't ask for it."""
+    result = m.fem_coupling_analysis(knobs=m._knobs_dict(DEFAULT_KNOBS), n_offsets=11, n_currents=2)
+    assert result["field_lines"] is None
+    assert result["field_lines_note"] is None
+    assert result["field_line_offset_m"] is None
+    assert result["field_line_current_a"] is None
+
+
+def test_fem_coupling_analysis_field_lines_reports_a_clear_note_without_femm(isolated_results_file, monkeypatch):
+    """Forces the not-installed path by construction (monkeypatching FemmBackend) so this
+    always runs regardless of whether FEMM happens to be installed on the machine running
+    it -- mirrors optimize_design's own verify_with_femm fallback test."""
+    from emac_sim.fem.femm_backend import FemmNotAvailableError
+
+    def _raise(*_args, **_kwargs):
+        raise FemmNotAvailableError("femm.info -- not installed (test stub)")
+
+    monkeypatch.setattr(m, "FemmBackend", _raise)
+    result = m.fem_coupling_analysis(knobs=m._knobs_dict(DEFAULT_KNOBS), n_offsets=11,
+                                      n_currents=2, field_lines=True)
+    assert result["field_lines"] is None
+    assert result["field_lines_note"] is not None
+    assert "FEMM" in result["field_lines_note"]
+
+
+def test_fem_coupling_analysis_field_lines_when_femm_is_installed():
+    pytest.importorskip("femm")
+    result = m.fem_coupling_analysis(knobs=m._knobs_dict(DEFAULT_KNOBS), n_offsets=11,
+                                      n_currents=2, field_lines=True, field_line_current_a=8.0)
+    assert result["field_lines_note"] is None
+    assert result["field_lines"]
+    assert result["field_line_offset_m"] == pytest.approx(0.0)
+    assert result["field_line_current_a"] == pytest.approx(8.0)
+    for line in result["field_lines"]:
+        assert len(line) >= 2

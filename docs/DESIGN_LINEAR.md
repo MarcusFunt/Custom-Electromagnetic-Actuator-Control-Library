@@ -114,6 +114,29 @@ speed difference at otherwise-identical everything else (see `docs/DESIGN_OPTIMI
 -- exactly the H-bridge-vs-half-bridge tradeoff this section originally flagged as
 unbuilt.
 
+**Two-coil push-pull (`StepperSupervisor(push_pull=True)`, opt-in, default `False`).** The
+scheme above is *sequential single-coil*: it drives exactly one station at a time (attract
+the coil ahead on approach, then, after passing it, repel that same coil from behind), with
+a coast between each pulse. `push_pull=True` overlaps them -- a departing coil keeps pushing
+from behind *while* the next coil is already pulling from ahead, so the slug is squeezed
+forward by two stations at once across the between-coil gap that was previously idle.
+Mechanically it (a) exposes every currently-live pulse via `StepperSupervisor.active_outputs()`
+(with it off, that's exactly `[self.active]` -- the unchanged single-coil path, so the whole
+existing suite is byte-for-byte unaffected), which `linear_sim.py` applies to all coils at
+once; (b) stretches the departure-repel window (`_fire_departure`) to span the whole gap to
+the next coil so the push stays live into that coil's attract; and (c) retires each earlier
+coil's push once the slug passes the next station, so only the one coil immediately behind
+ever pushes (without this, a repel window sized from a slow launch speed keeps a far-behind
+coil energized pointlessly -- negligible force, but wasted energy). Measured on an
+8-coil / 180-turn / 10 A design with the velocity governor open: **+34% exit speed under
+`"rcos"` (5.25 -> 7.01 m/s) and +39% under `"square"` (6.91 -> 9.58 m/s)** -- the `"square"`
+envelope (section 2.2) benefits more because its flat-top current keeps the push strong
+right where it overlaps the pull, whereas `"rcos"` fades to ~0 at the window edges. Needs
+`driver_bipolar=True` (the push is a negative current). Not yet wired into the optimizer's
+search knobs -- exposed on `simulate_design(push_pull=...)` for measurement; see
+`tests/test_linear_simulator.py`'s push-pull tests and `docs/FEM_PIPELINE.md` for the
+multi-coil field visualization.
+
 **The PM-branch pump-sizing approximation flagged here previously is fixed.**
 `_station_k_pump()` now returns `(k_quad, k_lin)` separately -- `k_quad` for the
 reluctance branch's `dE ~ i²` scaling (unchanged), `k_lin` for the PM branch's `dE ~ i`
