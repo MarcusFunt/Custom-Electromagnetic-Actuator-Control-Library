@@ -1,16 +1,16 @@
 {
   "worker": 0,
-  "cells_done_this_worker": 37,
-  "last_cell_id": 108,
-  "elapsed_h": 18.719,
-  "sec_per_cell": 1281.8,
-  "last_cell_best_femm_mps": 7.538,
+  "cells_done_this_worker": 273,
+  "last_cell_id": 272,
+  "elapsed_h": 37.358,
+  "sec_per_cell": 326.1,
+  "last_cell_best_femm_mps": 6.332,
   "qc": {
-    "peak_force_n": 13.3747,
-    "zero_offset_force_frac": 0.01,
-    "edge_force_frac": 0.0223,
+    "peak_force_n": 162.7708,
+    "zero_offset_force_frac": 0.0047,
+    "edge_force_frac": 0.0286,
     "zero_current_max_frac": 0.0,
     "n_solve_fail": 0
   },
-  "updated": "2026-07-17 07:04:10"
+  "updated": "2026-07-18 01:42:30"
 }
