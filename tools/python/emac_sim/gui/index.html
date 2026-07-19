@@ -205,17 +205,9 @@ svg .spt{cursor:crosshair}
 .toggle-lit{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--mut);cursor:pointer}
 /* launch animation */
 .animcard .seg button{padding:5px 12px}
-.anim-readout{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--mut);font-variant-numeric:tabular-nums}
-.anim-readout b{color:var(--ink);font-weight:700}
-.anim-controls{display:flex;align-items:center;gap:10px;margin-top:11px}
-.anim-controls input[type=range]{flex:1;accent-color:var(--accent);height:4px;padding:0;background:transparent}
-.animbtn{width:36px;height:31px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:8px;
-  cursor:pointer;font-size:13px;transition:.12s;display:inline-grid;place-items:center}
-.animbtn:hover{border-color:var(--accent);color:var(--accent)}
-.anim-controls select{width:auto;padding:6px 9px}
-.anim-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:6px}
+.animgif{display:block;width:100%;max-width:660px;height:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.anim-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:8px}
 .anim-legend i{width:12px;height:9px;border-radius:2px;display:inline-block;vertical-align:-1px;margin-right:5px}
-svg .coilrect{transition:fill .06s linear,stroke .06s linear}
 .animwait{text-align:center;padding:34px 18px;color:var(--mut)}
 .spin{display:inline-block;width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--accent);
   border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:10px}
@@ -902,81 +894,19 @@ async function showRun(id){
 // ---- launch animation: play the candidate's actual launch through the multi-stage tube ----
 const qs=(r,s)=>r.querySelector(s);
 let ANIM_SEQ=0;
-function mountLaunchSim(host,data){
-  const L=data.layout,F=data.frames;
-  if(!F.length){host.innerHTML='<div class="muted small">no trajectory for this geometry</div>';return {destroy(){}};}
-  const W=700,H=250,ml=14,mr=14,yT0=26,yT1=120,yV0=150,yV1=234;
-  const x0=L.x_start_m,x1=L.x_end_m,xmap=x=>ml+(x-x0)/((x1-x0)||1)*(W-ml-mr);
-  const vmax=Math.max(1e-6,...F.map(f=>f.v))*1.08,vmap=v=>yV1-(Math.max(0,v)/vmax)*(yV1-yV0);
-  const cl=L.coil_length_m,mlen=L.magnet_length_m,imax=L.i_max_a||1;
-  let g="";
-  g+=`<line x1="${ml}" y1="${yV1}" x2="${W-mr}" y2="${yV1}" stroke="var(--line)"/>`;
-  g+=`<text x="${ml}" y="${yV0-3}" font-size="9">${vmax.toFixed(0)} m/s</text><text x="${ml}" y="${yV1+11}" font-size="9">velocity vs. position</text>`;
-  g+=`<polyline points="${F.map(f=>xmap(f.x).toFixed(1)+','+vmap(f.v).toFixed(1)).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.5" opacity=".35"/>`;
-  g+=`<line x1="${ml}" y1="${yT0}" x2="${W-mr}" y2="${yT0}" stroke="var(--line)"/><line x1="${ml}" y1="${yT1}" x2="${W-mr}" y2="${yT1}" stroke="var(--line)"/>`;
-  L.gate_positions_m.forEach(gp=>{const gx=xmap(gp);g+=`<line x1="${gx.toFixed(1)}" y1="${yT1}" x2="${gx.toFixed(1)}" y2="${yT1+6}" stroke="var(--mut)" opacity=".3"/>`;});
-  L.coil_positions_m.forEach((c,k)=>{const a=xmap(c-cl/2),b=xmap(c+cl/2);
-    g+=`<rect class="coilrect" id="cr${k}" x="${a.toFixed(1)}" y="${yT0}" width="${Math.max(1,b-a).toFixed(1)}" height="${yT1-yT0}" rx="2" fill="var(--panel2)" stroke="var(--line)"/>`;});
-  g+=`<rect id="slugA" x="0" y="0" width="0" height="0"/><rect id="slugB" x="0" y="0" width="0" height="0"/>`;
-  g+=`<line id="phead" x1="0" y1="${yT0}" x2="0" y2="${yV1}" stroke="var(--ink)" stroke-width="1" opacity=".22"/>`;
-  g+=`<circle id="pdot" r="4" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.4"/>`;
-  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto">${g}</svg>
-    <div class="anim-readout" id="ard"></div>
-    <div class="anim-controls">
-      <button class="animbtn" id="apb" title="Play / pause">❚❚</button>
-      <button class="animbtn" id="arb" title="Restart">↺</button>
-      <input type="range" id="asc" min="0" max="1000" value="0" step="1" aria-label="scrub">
-      <select id="asp" title="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
-    </div>
-    <div class="anim-legend"><span><i style="background:#4C72B0"></i>coil attracting (+I)</span><span><i style="background:#DD8452"></i>coil repelling (−I)</span><span><i style="background:linear-gradient(90deg,#C44E52 50%,#4C72B0 50%)"></i>magnet slug</span><span>ticks = beam-break gates</span></div>`;
-  const svg=host.querySelector("svg"),coils=L.coil_positions_m.map((_,k)=>svg.querySelector("#cr"+k));
-  const slugA=svg.querySelector("#slugA"),slugB=svg.querySelector("#slugB"),phead=svg.querySelector("#phead"),pdot=svg.querySelector("#pdot"),ard=host.querySelector("#ard");
-  const ts=F.map(f=>f.t),xs=F.map(f=>f.x),vs=F.map(f=>f.v),cse=F.map(f=>f.coil),ise=F.map(f=>f.i);
-  const t0=ts[0],t1=ts[ts.length-1],span=Math.max(1e-6,t1-t0);
-  const slugH=(yT1-yT0)*0.52,slugY=(yT0+yT1)/2-slugH/2;
-  function interp(tau){
-    if(tau<=t0)return {x:xs[0],v:vs[0],c:cse[0],i:ise[0],t:t0};
-    if(tau>=t1)return {x:xs[xs.length-1],v:vs[vs.length-1],c:cse[cse.length-1],i:ise[ise.length-1],t:t1};
-    let lo=0,hi=ts.length-1;while(hi-lo>1){const m=(lo+hi)>>1;if(ts[m]<=tau)lo=m;else hi=m;}
-    const f=(tau-ts[lo])/((ts[hi]-ts[lo])||1);
-    return {x:xs[lo]+(xs[hi]-xs[lo])*f,v:vs[lo]+(vs[hi]-vs[lo])*f,c:cse[lo],i:ise[lo],t:tau};}
-  let lastC=-1;
-  function render(st){
-    const a=xmap(st.x-mlen/2),b=xmap(st.x+mlen/2),sw=Math.max(2,b-a),mid=a+sw/2;
-    slugA.setAttribute("x",a.toFixed(1));slugA.setAttribute("y",slugY);slugA.setAttribute("width",(sw/2).toFixed(1));slugA.setAttribute("height",slugH);slugA.setAttribute("fill","#C44E52");
-    slugB.setAttribute("x",mid.toFixed(1));slugB.setAttribute("y",slugY);slugB.setAttribute("width",(sw/2).toFixed(1));slugB.setAttribute("height",slugH);slugB.setAttribute("fill","#4C72B0");
-    if(st.c!==lastC)coils.forEach(c=>{c.setAttribute("fill","var(--panel2)");c.setAttribute("stroke","var(--line)");});
-    const mag=Math.min(1,Math.abs(st.i)/imax),col=st.i>=0?"76,114,176":"221,132,82";
-    if(coils[st.c]){coils[st.c].setAttribute("fill",`rgba(${col},${(0.15+0.85*mag).toFixed(2)})`);coils[st.c].setAttribute("stroke",`rgb(${col})`);}
-    lastC=st.c;
-    const px=xmap(st.x);phead.setAttribute("x1",px);phead.setAttribute("x2",px);pdot.setAttribute("cx",px);pdot.setAttribute("cy",vmap(st.v));
-    ard.innerHTML=`<span><b>${(st.t*1e3).toFixed(1)}</b> ms</span><span><b>${st.v.toFixed(1)}</b> m/s</span><span><b>${(st.x*1e3).toFixed(0)}</b> mm</span><span>coil <b>#${st.c+1}</b></span><span><b>${st.i.toFixed(0)}</b> A</span>`;}
-  let tau=t0,playing=false,speed=1,raf=null,last=null;const BASE=4.5;
-  const sc=host.querySelector("#asc"),pb=host.querySelector("#apb"),rb=host.querySelector("#arb"),sp=host.querySelector("#asp");
-  const setScrub=()=>{sc.value=Math.round((tau-t0)/span*1000);};
-  // rAF runs ONLY while playing -- paused/scrubbing leaves the page idle (no wasted CPU).
-  function loop(now){if(!host.isConnected){raf=null;return;}if(last==null)last=now;const dtr=(now-last)/1000;last=now;
-    tau+=dtr*(span/BASE)*speed;if(tau>=t1)tau=t0;setScrub();render(interp(tau));
-    raf=playing?requestAnimationFrame(loop):null;}
-  function play(){if(playing)return;playing=true;pb.textContent="❚❚";last=null;raf=requestAnimationFrame(loop);}
-  function pause(){playing=false;pb.textContent="►";if(raf){cancelAnimationFrame(raf);raf=null;}}
-  pb.onclick=()=>{playing?pause():play();};
-  rb.onclick=()=>{tau=t0;render(interp(tau));setScrub();play();};
-  sc.oninput=()=>{pause();tau=t0+(+sc.value/1000)*span;render(interp(tau));};
-  sp.onchange=()=>{speed=+sp.value;};
-  render(interp(tau));play();
-  return {destroy(){pause();host.innerHTML="";}};
-}
 // a self-contained card: summary tiles + animation + analytic/FEMM switch. getInfo() supplies the
 // currently-selected candidate ({params, label, n_coils?}); call card._load('analytic') to refresh.
 function launchCard(getInfo){
   const card=el("div",{class:"card animcard"});
   card.innerHTML=`<div class="charthead"><div class="section-sub" style="margin:0">Launch animation <span class="muted" id="animWho"></span></div>
-    <div class="seg" id="animLaw"><button data-law="analytic" class="on">Analytic</button><button data-law="femm">FEMM</button></div></div>
+    <div style="display:flex;gap:9px;align-items:center">
+      <button class="xbtn hidden" id="animDl">⤓ GIF</button>
+      <div class="seg" id="animLaw"><button data-law="analytic" class="on">Analytic</button><button data-law="femm">FEMM</button></div></div></div>
     <div class="tiles" id="animTiles" style="margin-bottom:12px"></div>
     <div id="animHost"></div>
+    <div class="anim-legend hidden" id="animLegend"><span><i style="background:#4C72B0"></i>coil attracting (+I)</span><span><i style="background:#DD8452"></i>coil repelling (−I)</span><span><i style="background:linear-gradient(90deg,#C44E52 50%,#4C72B0 50%)"></i>magnet slug</span><span>ticks = beam-break gates · loops automatically</span></div>
     <div id="animStatus" class="muted small" style="margin-top:9px"></div>`;
-  let ctrl=null,curLaw="analytic";
+  let curLaw="analytic",curGif=null,curName="launch";
   const tile=(v,u,l)=>`<div class="tile"><div class="v">${v} <small>${u}</small></div><div class="l">${l}</div></div>`;
   function setTiles(sm){qs(card,"#animTiles").innerHTML=
     tile(fmtNum(sm.v_exit,1),"m/s","exit speed")+tile((sm.efficiency*100).toFixed(1),"%","efficiency")+
@@ -985,23 +915,29 @@ function launchCard(getInfo){
     const info=getInfo();if(!info)return;const seq=++ANIM_SEQ;curLaw=law;
     card.querySelectorAll("#animLaw button").forEach(b=>b.classList.toggle("on",b.dataset.law===law));
     qs(card,"#animWho").textContent=info.label?("· "+info.label):"";
-    if(ctrl){ctrl.destroy();ctrl=null;}
+    curName=("launch_"+(info.label||"")+"_"+law).replace(/[^A-Za-z0-9_]+/g,"_").replace(/_+/g,"_");
+    qs(card,"#animDl").classList.add("hidden");qs(card,"#animLegend").classList.add("hidden");
     qs(card,"#animHost").innerHTML=`<div class="animwait"><div class="spin"></div><div>${law==="femm"?"Building real FEMM field solves for this geometry… <b>~30–60 s</b>":"Simulating launch…"}</div></div>`;
     qs(card,"#animStatus").textContent="";
     let d;try{d=await api("/api/animate",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({params:info.params,n_coils:info.n_coils,force_law:law})});}
+      body:JSON.stringify({params:info.params,n_coils:info.n_coils,force_law:law,gif:true,dark:isDark()})});}
     catch(e){if(seq===ANIM_SEQ)qs(card,"#animHost").innerHTML=`<div class="err">${e}</div>`;return;}
     if(seq!==ANIM_SEQ)return;                       // a newer selection/request superseded this one
-    setTiles(d.summary);
-    ctrl=mountLaunchSim(qs(card,"#animHost"),d);
+    setTiles(d.summary);curGif=d.gif||null;
+    qs(card,"#animHost").innerHTML=curGif
+      ? `<img class="animgif" src="${curGif}" alt="animated launch of ${info.label||"this candidate"}">`
+      : '<div class="muted small">no trajectory for this geometry</div>';
+    if(curGif){qs(card,"#animDl").classList.remove("hidden");qs(card,"#animLegend").classList.remove("hidden");}
     qs(card,"#animStatus").innerHTML=d.summary.faulted
       ? '<span style="color:var(--red)">The hand-tuned supervisor stalls on this geometry</span> — the launch never completes.'
       : (d.force_law==="femm"
          ? 'Running on a <b>real FEMM force table</b> built for this exact coil/slug. Hand-tuned supervisor drive.'
          : 'Analytic force model (instant). Hand-tuned supervisor drive — switch to <b>FEMM</b> for the accurate field solve.');}
+  qs(card,"#animDl").onclick=()=>{if(!curGif)return;
+    const a=el("a",{href:curGif,download:curName+".gif"});document.body.appendChild(a);a.click();a.remove();};
   card.querySelectorAll("#animLaw button").forEach(b=>b.onclick=()=>{
     if(b.dataset.law==="femm"&&!STATE.femm_available){toast("FEMM not installed","install FEMM to run the field solve","bad");return;}
-    if(b.dataset.law===curLaw&&ctrl)return;load(b.dataset.law);});
+    if(b.dataset.law===curLaw&&curGif)return;load(b.dataset.law);});
   card._load=load;
   return card;
 }
