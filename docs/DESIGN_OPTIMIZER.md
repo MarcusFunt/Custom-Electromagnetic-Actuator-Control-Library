@@ -254,6 +254,16 @@ treat any large gap between `search_reported` and the re-verified `speed` in an
 | `remanence_t` | magnet material grade, ferrite (~0.3T) to N52 NdFeB (~1.42T) | 0.3 - 1.42 T |
 | `i_max_a` | driver current rating | 1 - 150 A |
 
+**Not in the table: `slug_type`.** `DesignKnobs` carries a twelfth field, `slug_type` --
+`"pm"` (default, a permanent-magnet slug) or `"reluctance"` (a passive soft-iron slug). It is
+a run-level **mode**, not a searched dimension: set once per optimization (`emac-optimize
+--slug-type reluctance`) and never coded into the design vector, which is why the search is
+still over eleven knobs either way. In reluctance mode `remanence_t` is ignored and the force
+law becomes the attract-only, even-in-current, saturating reluctance branch
+(`coil_design.reluctance_force_model`); `driver_bipolar` also stops being the lever described
+below, since iron can't be repelled and the departure-side kick never engages. See
+`studies/femm_trends/README.md`'s "Reluctance projectiles" section.
+
 Every bound is a placeholder for **your** actual constraints (driver rating, available
 space, magnet grades on hand, budget) -- override them via `Bounds(...)` in Python or the
 `--max-tube-length-m` CLI flag (more flags are easy to add the same way; only the tube
@@ -274,9 +284,10 @@ converges on `True`, that's a real, physically load-bearing recommendation, not 
 ## 3. What "speed" means here
 
 The objective is the slug's velocity as it clears the last gate, with the supervisor's
-velocity governor (`target_velocity_m_s`) effectively disabled (set far above anything
-achievable) -- see `docs/DESIGN_LINEAR.md` section on "governed vs. true ceiling". This is
-a pure speed-maximization search, not a tracking or efficiency one. A design that FAULTs
+velocity governor (`target_velocity_m_s`) effectively disabled: every evaluation passes
+`optimize_design.V_TGT_FULL_THRUST` (100 m/s -- unreachable by construction), so the
+governor never throttles back and each candidate is scored at full thrust. This is a pure
+speed-maximization search, not a tracking or efficiency one. A design that FAULTs
 (bootstrap never got a gate response -- too weak to move the slug at all) or clears zero
 gates scores 0.0, same as one that violates the tube-length budget -- both push the search
 away from that region rather than crashing it.
@@ -309,7 +320,9 @@ Takes a few minutes at the defaults (roughly `maxiter * popsize * 11` worst-case
 evaluations, each a short closed-loop simulation). Increase `--maxiter`/`--popsize` for a
 more thorough search; `--workers N` parallelizes across processes. `--dt` and `--t-end`
 control the search-phase simulation fidelity/duration (the final report is always
-re-verified at high fidelity regardless).
+re-verified at high fidelity regardless). `--force-law {analytic,fem_reference}` selects the
+coupling model (see `docs/FEM_PIPELINE.md`, and budget a slower search for `fem_reference`);
+`--slug-type {pm,reluctance}` selects the projectile class (section 2).
 
 ```python
 from emac_sim.optimize_design import optimize, Bounds

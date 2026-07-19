@@ -35,9 +35,11 @@ Add a `[slug]` section and per-coil geometry fields (`turns`, `coil_winding_leng
 emac-femgen --config examples/configs/linear_stepper_5coil_fem.toml --outdir build/fem_lut
 ```
 
-Options: `--backend {reference,femm}` (default `reference`), `--coil N` (repeatable, default
-every coil), `--n-offsets`/`--n-currents` (grid resolution), `--max-current-a` (sweep span),
-`--quiet`. Writes one `coil_NN.npz` per coil plus a `manifest.json`.
+Options: `--backend {reference,femm}` (default `reference`), `--slug-type {pm,reluctance}`
+(overrides the config's own slug type for this sweep -- see the known limitations below),
+`--coil N` (repeatable, default every coil), `--n-offsets`/`--n-currents` (grid resolution),
+`--max-current-a` (sweep span), `--quiet`. Writes one `coil_NN.npz` per coil plus a
+`manifest.json`.
 
 A real FEMM sweep solves one full mesh per grid point -- seconds, not microseconds -- which
 is exactly why this is a table-generation step, never called per simulation timestep.
@@ -157,10 +159,18 @@ dashboard.
 
 ## Known limitations
 
-- PM branch only. The reluctance branch (`Cmag`, soft-iron slugs) isn't modeled here yet --
-  both backends assume a pure-PM slug, matching this build's default (`c_mag_n_per_a2 =
-  0.0`). A soft-iron/hybrid slug would need real B-H-curve materials in the FEMM backend,
-  which is a larger extension.
+- **Reluctance (soft-iron) slugs are supported, but at uneven fidelity between the two
+  backends.** Both take `SlugGeometry(slug_type="reluctance")` (`--slug-type reluctance` on
+  `emac-femgen` and `emac-optimize`), and `femm_backend` models the slug as FEMM's
+  nonlinear-B-H library steel (`1018 Steel` by default), so real saturation -- the dominant
+  limiter for a reluctance gun -- is genuinely captured. The **reference** backend's
+  reluctance branch is much coarser: it reuses `coil_design.reluctance_force_model`'s
+  coenergy/inductance-gradient estimate through the synthetic `q_shape` lobe, so it gets the
+  attract-only, even-in-current, saturating *character* right but not the real coupling
+  shape. So the usual "reference backend is shape-accurate" claim below applies to the PM
+  path only -- for reluctance, FEMM is the sole accuracy reference. See
+  `studies/femm_trends/README.md`'s "Reluctance projectiles" section and
+  `tests/test_reluctance_mode.py`.
 - The reference backend has all the idealizations listed in its docstring (vacuum
   permeability, an idealized uniformly-magnetized cylinder, no eddy currents). Treat it as a
   shape-accurate stand-in for testing/plumbing, not a substitute for the FEMM backend when

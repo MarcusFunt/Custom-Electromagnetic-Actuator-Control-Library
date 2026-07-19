@@ -34,6 +34,7 @@ stage for a soft-iron bob.
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Firmware/hardware design spec: event-first architecture, ESP32-S3 target, control-law derivations. |
 | [`docs/DESIGN_LINEAR.md`](docs/DESIGN_LINEAR.md) | Linear one-way stepper: physics, electrical/thermal dynamics, estimator, supervisor. |
 | [`docs/DESIGN_OPTIMIZER.md`](docs/DESIGN_OPTIMIZER.md) | Design-space optimizer: the physical winding/magnet model, knobs, and how to run it. |
+| [`docs/RL_CONTROL.md`](docs/RL_CONTROL.md) | RL control of the many-stage PM coilgun: the Gymnasium environment, PPO training (`emac-rl-train`), the hand-tuned baselines it has to beat, and the speed/efficiency frontier. |
 | [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md) | Model Context Protocol interface: drive the optimizer from an LLM client with live progress/fault-rate reporting, plus the `tools/web/optimizer_dashboard.html` GUI. |
 | [`docs/PHYSICS_ENGINE_ANALYSIS.md`](docs/PHYSICS_ENGINE_ANALYSIS.md) | Host physics engine's numerical methods (integrator, event interpolation), known limits, and roadmap. |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | How the engine's accuracy is *measured* (analytic coupling vs real FEMM to ~1-2%, integrator convergence order, energy/back-EMF closure), the numbers, and how to reproduce them for your own geometry. |
@@ -122,10 +123,10 @@ python -m pip install -e .[mcp]
 claude mcp add emac -- emac-mcp
 ```
 
-Exposes `run_optimization`, `simulate_design_detailed`, `sensitivity_sweep`, and
-`get_latest_result` as MCP tools, with live progress and per-generation fault-rate
-warnings so a long search's health is visible while it's still running. See
-`docs/MCP_SERVER.md`.
+Exposes `run_optimization`, `simulate_design_detailed`, `sensitivity_sweep`,
+`get_latest_result`, and `fem_coupling_analysis` as MCP tools, with live progress and
+per-generation fault-rate warnings so a long search's health is visible while it's still
+running. See `docs/MCP_SERVER.md`.
 
 ## Generate FEM Force Tables for the Linear Stepper
 
@@ -150,6 +151,8 @@ emac-gui
 `emac-gui` starts a small local web app (stdlib only -- no new dependencies) and opens it in
 your browser. It unifies what used to be three separate pages into one **EMAC control lab**:
 
+- **Home** -- the landing page: shortcut buttons into the views below, plus a workspace panel
+  summarizing what's configured and what's already been run on this machine.
 - **Runs & results** -- every search and sweep you've run, turned into interactive charts.
   *Design searches* (the RL hardware BO, the FEMM Bayesian optimizations) show the
   **speed↔efficiency scatter** with the Pareto-optimal set highlighted, a **convergence** curve,

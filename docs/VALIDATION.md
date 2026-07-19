@@ -122,10 +122,17 @@ extraction's ~2x over-estimate) looks self-consistent in isolation and is caught
 
 ## Known limitations (accuracy caveats)
 
-- **Slug iron / saturation.** Both the analytic model and the (validated) FEMM path model a
-  *bare PM* slug. A ferromagnetic slug body (`CoilStation.Cmag > 0`) is supported in the
-  plant but is **not** covered by the FEM pipeline, and its coupling shape is still the
-  synthetic `q_shape` lobe.
+- **Slug iron / saturation -- supported, but not validated to a number.** Every measurement
+  in this document is for a *bare PM* slug. A ferromagnetic slug (`slug_type="reluctance"`,
+  the plant's `CoilStation.Cmag > 0` branch) *is* covered by the FEM pipeline -- the FEMM
+  backend solves it as nonlinear-B-H steel, so saturation is captured -- but it has no
+  analytic-vs-FEMM accuracy table like the one above, because the analytic side is
+  deliberately coarse there: `coil_design.reluctance_force_model` is a coenergy estimate
+  routed through the synthetic `q_shape` lobe, not a shape-accurate field model. Read that
+  as: the PM analytic model is validated to ~2%; the reluctance analytic model is a
+  sanity-checked approximation whose only accuracy reference is FEMM.
+  `tests/test_reluctance_mode.py` pins its qualitative invariants (attract-only, even in
+  current, saturating past `i_sat`), not its accuracy.
 - **Coupling shape (quantified).** The analytic *plant* still uses a Gaussian `q_shape` lobe
   anchored to the physically-correct peak height (`k_a`) and location (`x_c`). The peak now
   matches the winding-averaged reference exactly, but the *tails* do not: the Gaussian decays

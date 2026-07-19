@@ -55,8 +55,10 @@ base class would hide important design decisions.
    analytic-reference backend into a `ForceLUT`, which `linear_plant.net_force` uses
    directly for any coil with `force_lut_path` set -- `q_shape` remains the default for
    every config that doesn't opt in. Calibration-data-fitted tables (vs. simulated) are
-   still not supported. The reluctance (soft-iron) branch is also not yet covered by this
-   pipeline -- see `docs/FEM_PIPELINE.md`'s known limitations.
+   still not supported. The reluctance (soft-iron) branch *is* covered by this pipeline
+   (`--slug-type reluctance`; the FEMM backend solves it as nonlinear-B-H steel), though on
+   the reference-backend side its force law is a coarse coenergy estimate that still routes
+   through `q_shape` -- see `docs/FEM_PIPELINE.md`'s known limitations.
 4. **Bus droop is still absent; winding self-heating is now modeled.** `plant.
    resistance_at_temperature` / `plant.thermal_step` track each linear-stepper coil's
    temperature from its own i^2*R dissipation (one-node thermal model, opt-in via
@@ -149,10 +151,13 @@ analytic plant's `k_a` equals the reference/FEM peak force per amp to quadrature
 (`_coil_electromagnetics`), so building N identical coils per optimizer candidate costs one
 field solve, not N.
 
-> Note: the design-trends study (`studies/femm_trends/`) predates fix #4 -- its
-> `CorrectedFemmBackend` still uses the stress-tensor extraction, so its absolute force
-> values (and any conclusions sensitive to them) should be treated with caution until the
-> sweep is regenerated with the coil-Lorentz extraction.
+> Note: the design-trends study's **committed `results/` dataset** predates fix #4 -- it was
+> generated with the old stress-tensor extraction, so its absolute force values (and any
+> conclusions sensitive to them) should be treated with caution. The study *code* has since
+> been corrected: `study_lib.CorrectedFemmBackend` now reads block integral 12 (axial Lorentz
+> force on the coil), so re-running the sweep produces corrected data. That split is why
+> `bo_search.py` warm-starts from the regenerated `study/results/` and excludes the legacy
+> `results/` unless you ask for it explicitly -- see `studies/femm_trends/README.md`.
 
 ## Recommended next improvements
 
