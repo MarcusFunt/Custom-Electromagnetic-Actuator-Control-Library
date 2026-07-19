@@ -288,6 +288,27 @@ def test_simulate_candidate_analytic_returns_animation_payload():
     json.dumps(d, default=S._json_default)
 
 
+def test_render_launch_gif_produces_a_looping_animated_gif():
+    import base64
+    import io
+
+    from PIL import Image
+
+    sim = S.simulate_candidate({"n_coils": 8, "turns": 450}, force_law="analytic")
+    uri = S.render_launch_gif(sim, dark=True)
+    assert uri.startswith("data:image/gif;base64,")
+    raw = base64.b64decode(uri.split(",", 1)[1])
+    assert raw[:6] in (b"GIF89a", b"GIF87a")
+    im = Image.open(io.BytesIO(raw))
+    assert im.n_frames > 1                                 # actually animated
+    assert im.info.get("loop") == 0                        # loops forever
+    assert im.size[0] > 0 and im.size[1] > 0
+
+
+def test_render_launch_gif_handles_an_empty_trajectory():
+    assert S.render_launch_gif({"layout": {}, "frames": [], "summary": {}}) is None
+
+
 def test_simulate_candidate_femm_requires_femm():
     if S.femm_available():
         pytest.skip("FEMM installed here; the not-installed guard can't be exercised")

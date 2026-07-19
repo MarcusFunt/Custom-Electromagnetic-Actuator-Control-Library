@@ -935,6 +935,98 @@ def simulate_candidate(params: dict, force_law: str = "analytic", n_coils: int |
     }
 
 
+def _launch_font(size: int):
+    from PIL import ImageFont
+    try:                                                   # matplotlib ships DejaVuSans
+        import matplotlib
+        fp = Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf" / "DejaVuSans.ttf"
+        return ImageFont.truetype(str(fp), size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def render_launch_gif(sim: dict, dark: bool = True, size=(660, 250),
+                      max_frames: int = 48, total_ms: int = 3600) -> str | None:
+    """Draw the launch (tube + coils firing + moving slug + velocity trace) to an animated GIF
+    and return it as a base64 data URI, so the GUI can drop it inline in an <img>. Reuses the
+    same frames the interactive view would; palette is theme-matched via `dark`."""
+    import base64
+    import io
+
+    from PIL import Image, ImageDraw
+
+    L, F = sim["layout"], sim["frames"]
+    if not F:
+        return None
+    W, H = size
+    ml, mr, yT0, yT1, yV0, yV1 = 16, 16, 40, 130, 166, 232
+    x0, x1 = L["x_start_m"], L["x_end_m"]
+    def xmap(x): return ml + (x - x0) / ((x1 - x0) or 1) * (W - ml - mr)
+    vmax = max(1e-6, max(f["v"] for f in F)) * 1.08
+    def vmap(v): return yV1 - (max(0.0, v) / vmax) * (yV1 - yV0)
+    def P(x, y): return (round(x), round(y))
+    cl, mlen, imax = L["coil_length_m"], L["magnet_length_m"], L["i_max_a"] or 1.0
+
+    if dark:
+        bg, panel2, line, ink, mut = (21, 26, 35), (27, 33, 44), (40, 48, 60), (232, 237, 245), (139, 152, 171)
+    else:
+        bg, panel2, line, ink, mut = (255, 255, 255), (238, 241, 247), (226, 232, 240), (26, 36, 50), (100, 116, 139)
+    attract, repel, sN, sS, acc = (76, 114, 176), (221, 132, 82), (196, 78, 82), (76, 114, 176), (76, 114, 176)
+    ph = tuple(round(bg[i] + (ink[i] - bg[i]) * 0.28) for i in range(3))          # faint playhead
+    edge = tuple(round(bg[i] + (ink[i] - bg[i]) * 0.24) for i in range(3))        # coil outline
+    font, fontS = _launch_font(13), _launch_font(10)
+
+    base = Image.new("RGB", (W, H), bg)
+    b = ImageDraw.Draw(base)
+    b.line([P(ml, yV1), P(W - mr, yV1)], fill=line, width=1)
+    b.line([P(xmap(f["x"]), vmap(f["v"])) for f in F], fill=acc, width=2)
+    b.text((ml, yV0 - 13), f"{vmax:.0f} m/s", font=fontS, fill=mut)
+    b.text((ml, yV1 + 3), "velocity vs. position", font=fontS, fill=mut)
+    b.line([P(ml, yT0), P(W - mr, yT0)], fill=line, width=1)
+    b.line([P(ml, yT1), P(W - mr, yT1)], fill=line, width=1)
+    for gp in L["gate_positions_m"]:
+        b.line([P(xmap(gp), yT1), P(xmap(gp), yT1 + 6)], fill=mut, width=1)
+    boxes = []
+    for c in L["coil_positions_m"]:
+        a, bb = xmap(c - cl / 2), xmap(c + cl / 2)
+        boxes.append((a, bb))
+        b.rectangle([round(a), yT0, round(bb), yT1], outline=edge, width=1, fill=panel2)
+
+    def blend(c1, c2, f): return tuple(round(c1[i] + (c2[i] - c1[i]) * f) for i in range(3))
+    n = min(len(F), max_frames)
+    idx = [round(i * (len(F) - 1) / (n - 1)) for i in range(n)] if n > 1 else [0]
+    imgs = []
+    for k in idx:
+        f = F[k]
+        im = base.copy()
+        d = ImageDraw.Draw(im)
+        ci = f["coil"]
+        if 0 <= ci < len(boxes):
+            a, bb = boxes[ci]
+            mag = min(1.0, abs(f["i"]) / imax)
+            col = attract if f["i"] >= 0 else repel
+            d.rectangle([round(a), yT0, round(bb), yT1], outline=col, width=1,
+                        fill=blend(panel2, col, 0.15 + 0.85 * mag))
+        sx0, sx1 = xmap(f["x"] - mlen / 2), xmap(f["x"] + mlen / 2)
+        sw = max(3.0, sx1 - sx0)
+        mid = sx0 + sw / 2
+        sh = (yT1 - yT0) * 0.52
+        sy = (yT0 + yT1) / 2 - sh / 2
+        d.rectangle([round(sx0), round(sy), round(mid), round(sy + sh)], fill=sN)
+        d.rectangle([round(mid), round(sy), round(sx0 + sw), round(sy + sh)], fill=sS)
+        px, py = xmap(f["x"]), vmap(f["v"])
+        d.line([P(px, yT0), P(px, yV1)], fill=ph, width=1)
+        d.ellipse([round(px) - 4, round(py) - 4, round(px) + 4, round(py) + 4], fill=acc, outline=bg)
+        d.text((ml, 12), f"t = {f['t'] * 1e3:5.1f} ms     v = {f['v']:5.1f} m/s     "
+                         f"coil #{ci + 1}     {f['i']:+.0f} A", font=font, fill=ink)
+        imgs.append(im.quantize(colors=64))
+    buf = io.BytesIO()
+    dur = max(40, round(total_ms / len(imgs)))
+    imgs[0].save(buf, format="GIF", save_all=True, append_images=imgs[1:], duration=dur,
+                 loop=0, disposal=2, optimize=True)
+    return "data:image/gif;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 # --------------------------------------------------------------------------- HTTP handler
 def _json_default(o: Any) -> Any:
     """Coerce numpy scalars/arrays (which leak in from ForceLUT/quality) to native JSON
@@ -1041,10 +1133,15 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("backend", "reference"), body.get("mesh_frac"),
                 ))
             elif route == "/api/animate":
-                self._json(simulate_candidate(
+                sim = simulate_candidate(
                     body.get("params", {}), body.get("force_law", "analytic"),
                     n_coils=body.get("n_coils"), mesh_frac=body.get("mesh_frac"),
-                ))
+                )
+                if body.get("gif"):                        # inline animated GIF (data URI)
+                    self._json({"force_law": sim["force_law"], "summary": sim["summary"],
+                                "gif": render_launch_gif(sim, dark=bool(body.get("dark", True)))})
+                else:
+                    self._json(sim)
             else:
                 self._error(ValueError("not found"), 404)
         except Exception as exc:                        # noqa: BLE001
