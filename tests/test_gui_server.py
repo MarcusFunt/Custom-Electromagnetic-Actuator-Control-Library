@@ -309,6 +309,29 @@ def test_render_launch_gif_handles_an_empty_trajectory():
     assert S.render_launch_gif({"layout": {}, "frames": [], "summary": {}}) is None
 
 
+# --------------------------------------------------------------------------- serving over the LAN
+def test_lan_flag_binds_all_interfaces_but_default_stays_loopback(monkeypatch):
+    """--lan must widen the bind to 0.0.0.0; without it the GUI stays private to this machine
+    (it can launch tools, so a network-exposed default would be the wrong safety posture)."""
+    seen = {}
+
+    def fake_serve(host, port, open_browser=True):
+        seen["host"], seen["port"] = host, port
+
+    monkeypatch.setattr(S, "serve", fake_serve)
+    S.main(["--no-browser"])
+    assert seen["host"] == "127.0.0.1"                    # safe default
+    S.main(["--lan", "--no-browser"])
+    assert seen["host"] == "0.0.0.0"                      # reachable over Wi-Fi
+    S.main(["--host", "192.168.1.50", "--port", "9100", "--no-browser"])
+    assert seen["host"] == "192.168.1.50" and seen["port"] == 9100
+
+
+def test_lan_ip_returns_a_dotted_address_or_none():
+    ip = S.lan_ip()
+    assert ip is None or (ip.count(".") == 3 and all(p.isdigit() for p in ip.split(".")))
+
+
 def test_simulate_candidate_femm_requires_femm():
     if S.femm_available():
         pytest.skip("FEMM installed here; the not-installed guard can't be exercised")

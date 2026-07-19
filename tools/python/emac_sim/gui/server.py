@@ -1148,15 +1148,43 @@ class Handler(BaseHTTPRequestHandler):
             self._error(exc, 400)
 
 
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
+def lan_ip() -> str | None:
+    """Best-effort LAN address of this machine -- the one another device on the same Wi-Fi would
+    use. Opens a UDP socket toward a public address; nothing is actually sent, it just makes the
+    OS choose the outbound interface."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            return str(s.getsockname()[0])
+        finally:
+            s.close()
+    except Exception:
+        return None
+
+
 def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True) -> None:
     httpd = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://{host}:{port}/"
-    print(f"EMAC GUI serving at {url}")
+    exposed = host not in LOOPBACK                     # bound to something reachable off-machine
+    local_url = f"http://127.0.0.1:{port}/" if exposed else f"http://{host}:{port}/"
+    print(f"EMAC GUI serving at {local_url}")
+    if exposed:
+        ip = lan_ip()
+        if ip:
+            print(f"  on this network:  http://{ip}:{port}/   <- open this on your phone/laptop")
+        print(f"  bound to {host} (all interfaces)")
+        print("  ! NOTE: there is NO password. Anyone on this network can open this GUI and use")
+        print("    it to run the whitelisted tools ON THIS MACHINE and read this project's files.")
+        print("    Only do this on a network you trust; Ctrl+C stops it.")
     print(f"  project root: {REPO_ROOT}")
     print(f"  FEMM available: {femm_available()}")
     print("  press Ctrl+C to stop")
     if open_browser:
-        threading.Thread(target=lambda: (time.sleep(0.6), webbrowser.open(url)), daemon=True).start()
+        threading.Thread(target=lambda: (time.sleep(0.6), webbrowser.open(local_url)), daemon=True).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -1172,11 +1200,15 @@ def main(argv: list[str] | None = None) -> int:
         prog="emac-gui",
         description="Unified EMAC GUI: run the tools, launch/estimate sweeps, and visualize "
                     "results in one local web app.")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="interface to bind (default 127.0.0.1 = this machine only)")
+    parser.add_argument("--lan", action="store_true",
+                        help="serve on ALL interfaces (0.0.0.0) so other devices on your Wi-Fi "
+                             "can reach it. No password is required -- trusted networks only.")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true", help="don't auto-open a browser")
     args = parser.parse_args(argv)
-    serve(args.host, args.port, open_browser=not args.no_browser)
+    serve("0.0.0.0" if args.lan else args.host, args.port, open_browser=not args.no_browser)
     return 0
 
 

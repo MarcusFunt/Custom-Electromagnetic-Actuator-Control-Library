@@ -183,6 +183,19 @@ Niceties: it **remembers** your last config/directory/theme, raises a **toast** 
 background job finishes, has **keyboard shortcuts** (`1`-`6` switch views), and collapses to
 an icon rail on narrow windows.
 
+### Reaching it from another device
+
+```powershell
+emac-gui --lan            # serve on 0.0.0.0; prints the http://<your-ip>:8765/ to open
+```
+
+By default the GUI binds `127.0.0.1`, so it is reachable only from the machine it runs on.
+`--lan` binds all interfaces so a phone or laptop on the same Wi-Fi can open it — the startup
+banner prints the exact URL. **There is no password**: anyone who can reach that address can use
+the GUI to run the whitelisted tools on the host machine and read this project's files, so only
+do this on a network you trust. On Windows you may also have to allow Python through the
+firewall the first time (Windows Defender will prompt, or add an inbound rule for the port).
+
 The older standalone pages (`tools/web/optimizer_dashboard.html`, the FEMM-trends
 `studies/femm_trends/dashboard.html`) still open directly in a browser with no server, but
 `emac-gui` supersedes them for interactive use -- it's the one that can also *run* things, and
