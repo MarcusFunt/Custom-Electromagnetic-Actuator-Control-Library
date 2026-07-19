@@ -5,49 +5,76 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EMAC Optimizer Dashboard</title>
 <style>
+/* Light theme is the source of truth for the token set; the three blocks below
+   override only the values that change, so a new token added here is inherited
+   everywhere until it is deliberately re-themed. */
 :root {
   --bg: #f5f6f8;
   --surface: #ffffff;
   --surface-alt: #eef0f3;
   --border: #d8dce3;
+  --grid-line: #e9ecf1;
   --text: #171b21;
-  --text-muted: #626b7a;
+  --text-muted: #5b6473;
   --accent: #0e8f83;
   --accent-soft: #d8f0ec;
+  --on-accent: #032220;
   --good: #1f9d55;
   --good-soft: #dcf3e4;
-  --warn: #b5790f;
+  --warn: #96620b;
   --warn-soft: #faedd2;
-  --bad: #c94a4a;
+  --bad: #b93f3f;
   --bad-soft: #fbe2e2;
+  --info-soft: #e4edfb;
+  --info: #2c5da8;
   --neutral-soft: #e7e9ed;
+  --focus: #0e6fd6;
+  /* Chart series are their own scale, deliberately NOT the semantic good/warn/bad
+     tokens -- a velocity trace is not a warning, and reusing the alert colours for
+     data made "is that red line bad or just the second series?" ambiguous. */
+  --series-a: #0e8f83;
+  --series-b: #7048c4;
+  --series-c: #b5620f;
+  --series-d: #2c6ba8;
+  --fault-bar: #d9a441;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
   --sans: -apple-system, "Segoe UI", "Inter", Helvetica, Arial, sans-serif;
   --grid-lo: 244, 232, 208;
   --grid-hi: 14, 143, 131;
+  --shadow-card: 0 1px 2px rgba(16, 20, 27, 0.04);
+  --shadow-pop: 0 6px 20px rgba(16, 20, 27, 0.16);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #10141b; --surface: #171d27; --surface-alt: #1d2430; --border: #2b3340;
-    --text: #e7eaf0; --text-muted: #8b93a4; --accent: #4fd1c5; --accent-soft: #163531;
+    --grid-line: #232b38;
+    --text: #e7eaf0; --text-muted: #949cad; --accent: #4fd1c5; --accent-soft: #163531;
+    --on-accent: #04201d;
     --good: #6ee7a8; --good-soft: #143323; --warn: #f0b357; --warn-soft: #3a2c12;
     --bad: #f2777a; --bad-soft: #3a1c1e; --neutral-soft: #232a35;
+    --info: #8fb6f0; --info-soft: #16233a;
+    --focus: #6aa9ff;
+    --series-a: #4fd1c5; --series-b: #b79cf5; --series-c: #f0b357; --series-d: #79b8f5;
+    --fault-bar: #c8913a;
     --grid-lo: 45, 40, 32; --grid-hi: 79, 209, 197;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
 }
 :root[data-theme="dark"] {
   --bg: #10141b; --surface: #171d27; --surface-alt: #1d2430; --border: #2b3340;
-  --text: #e7eaf0; --text-muted: #8b93a4; --accent: #4fd1c5; --accent-soft: #163531;
+  --grid-line: #232b38;
+  --text: #e7eaf0; --text-muted: #949cad; --accent: #4fd1c5; --accent-soft: #163531;
+  --on-accent: #04201d;
   --good: #6ee7a8; --good-soft: #143323; --warn: #f0b357; --warn-soft: #3a2c12;
   --bad: #f2777a; --bad-soft: #3a1c1e; --neutral-soft: #232a35;
+  --info: #8fb6f0; --info-soft: #16233a;
+  --focus: #6aa9ff;
+  --series-a: #4fd1c5; --series-b: #b79cf5; --series-c: #f0b357; --series-d: #79b8f5;
+  --fault-bar: #c8913a;
   --grid-lo: 45, 40, 32; --grid-hi: 79, 209, 197;
-}
-:root[data-theme="light"] {
-  --bg: #f5f6f8; --surface: #ffffff; --surface-alt: #eef0f3; --border: #d8dce3;
-  --text: #171b21; --text-muted: #626b7a; --accent: #0e8f83; --accent-soft: #d8f0ec;
-  --good: #1f9d55; --good-soft: #dcf3e4; --warn: #b5790f; --warn-soft: #faedd2;
-  --bad: #c94a4a; --bad-soft: #fbe2e2; --neutral-soft: #e7e9ed;
-  --grid-lo: 244, 232, 208; --grid-hi: 14, 143, 131;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -61,7 +88,14 @@ body {
   padding: 2.2rem 1.5rem 4rem;
 }
 ::selection { background: var(--accent-soft); }
+:where(a):focus-visible, :where(button, select, textarea, input, summary):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
+.page-head { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.1rem; }
+.page-head > div { min-width: 0; }
 .eyebrow {
   font-family: var(--mono);
   font-size: 0.72rem;
@@ -71,10 +105,39 @@ body {
   margin: 0 0 0.5rem;
 }
 h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; margin: 0 0 0.4rem; }
-.subtitle { color: var(--text-muted); font-size: 0.95rem; max-width: 68ch; margin: 0 0 1.6rem; }
+.subtitle { color: var(--text-muted); font-size: 0.95rem; max-width: 68ch; margin: 0; }
 .subtitle code { font-family: var(--mono); font-size: 0.88em; }
+/* The full list of accepted JSON shapes is reference material, not a first-read
+   necessity -- it lives in a disclosure so the first screen is the search itself. */
+details.shapes { margin: 0.7rem 0 0; }
+details.shapes > summary {
+  cursor: pointer; font-size: 0.82rem; color: var(--text-muted);
+  width: fit-content; padding: 0.15rem 0;
+}
+details.shapes > summary:hover { color: var(--text); }
+details.shapes .shape-list {
+  list-style: none; margin: 0.6rem 0 0; padding: 0 0 0 0.1rem;
+  display: grid; gap: 0.4rem; font-size: 0.82rem; color: var(--text-muted); max-width: 78ch;
+}
+details.shapes .shape-list code { font-family: var(--mono); font-size: 0.88em; color: var(--text); }
+
+.theme-toggle {
+  margin-left: auto; flex: none;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 0.2rem;
+}
+.theme-toggle button {
+  font: inherit; font-size: 0.74rem; font-family: var(--mono);
+  color: var(--text-muted); background: none; border: 0; cursor: pointer;
+  padding: 0.32rem 0.6rem; border-radius: 999px; line-height: 1.1;
+}
+.theme-toggle button:hover { color: var(--text); }
+.theme-toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 
 /* ---- loader toolbar ---- */
+/* Sticky: a run in progress is watched for minutes and the live-state readout is
+   in here, so it must stay reachable without scrolling back to the top. */
 .loader {
   display: flex;
   flex-wrap: wrap;
@@ -83,8 +146,12 @@ h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; text-wrap: b
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 0.9rem 1rem;
+  padding: 0.7rem 0.85rem;
   margin-bottom: 1.6rem;
+  box-shadow: var(--shadow-card);
+  position: sticky;
+  top: 0.6rem;
+  z-index: 20;
 }
 .btn {
   font-family: var(--sans);
@@ -95,25 +162,32 @@ h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; text-wrap: b
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: 0.5rem 0.9rem;
+  min-height: 40px;          /* comfortable pointer + touch target */
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .btn:hover { border-color: var(--accent); }
-.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #061715; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.icon-only { padding: 0.5rem; min-width: 40px; }
 .loader .divider { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
 .loader .hint { font-size: 0.78rem; color: var(--text-muted); }
 .live-indicator {
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-family: var(--mono); font-size: 0.76rem; color: var(--text-muted);
   margin-left: auto;
+  min-width: 0;
 }
+.live-indicator #live-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: none; }
 .live-dot.on { background: var(--good); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-@media (prefers-reduced-motion: reduce) { .live-dot.on { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .live-dot.on { animation: none; }
+  .coil-band, .progress-fill, .chart-tip { transition: none; }
+}
 
 .paste-panel {
   display: none;
@@ -197,7 +271,9 @@ body.drop-active::after {
 }
 .stat { text-align: left; }
 .stat .k { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.stat .v { font-family: var(--mono); font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .v { font-family: var(--mono); font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat .v .unit { font-size: 0.72em; font-weight: 500; color: var(--text-muted); }
+.stat .sub { font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .stat .v.warn { color: var(--warn); }
 .stat .v.bad { color: var(--bad); }
 
@@ -208,37 +284,89 @@ section { margin-bottom: 2rem; }
   border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem;
 }
 .section-head h2 { font-size: 1.05rem; margin: 0; font-weight: 650; }
-.section-head .note { font-size: 0.78rem; color: var(--text-muted); }
+/* .note was previously scoped to `.section-head .note`, so the three callers that
+   use it standalone (femm_note, field_lines_note) rendered at full body size and
+   full-strength colour. It is a standalone class now. */
+.note { font-size: 0.78rem; color: var(--text-muted); }
+.section-head .note { text-align: right; }
 
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 1.1rem 1.2rem;
+  box-shadow: var(--shadow-card);
 }
-.chart-wrap > svg { display: block; width: 100%; height: 220px; }
-.chart-legend { display: flex; flex-wrap: wrap; gap: 1.2rem; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; }
+
+/* ---- charts ---- */
+.chart-wrap { position: relative; }
+.chart-scroll { overflow-x: auto; overflow-y: hidden; }
+svg.chart, svg.schematic { display: block; width: 100%; min-width: 520px; height: auto; }
+svg.chart text, svg.schematic text { font-family: var(--mono); }
+/* Charts are drawn in a fixed 900-unit viewBox and stretched to the card width, so
+   label text would otherwise scale with the container -- ~19px on a wide desktop,
+   ~6px on a phone. fitChartText() measures the painted width and sets these two
+   vars to the inverse scale, holding every label at a constant CSS pixel size. */
+svg.chart .tick, svg.schematic .tick { font-size: var(--tick-fs, 11px); fill: var(--text-muted); }
+/* No fill here: each axis title is coloured to the series it scales, via attribute. */
+svg.chart .axis-title, svg.schematic .axis-title { font-size: var(--axis-fs, 11px); font-weight: 600; }
+svg.chart .grid { stroke: var(--grid-line); stroke-width: 1; }
+svg.chart .axis-line { stroke: var(--border); stroke-width: 1; }
+svg.chart .series { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.chart-hit { cursor: crosshair; }
+.chart-cursor { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; opacity: 0; }
+.chart-wrap.hovering .chart-cursor { opacity: 0.8; }
+.chart-dot { pointer-events: none; opacity: 0; }
+.chart-wrap.hovering .chart-dot { opacity: 1; }
+
+.chart-tip {
+  position: absolute; z-index: 5; pointer-events: none; opacity: 0;
+  transform: translate(-50%, -115%);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+  box-shadow: var(--shadow-pop); padding: 0.45rem 0.6rem;
+  font-family: var(--mono); font-size: 0.74rem; color: var(--text);
+  white-space: nowrap; transition: opacity 0.1s ease;
+}
+.chart-wrap.hovering .chart-tip { opacity: 1; }
+.chart-tip .tip-head { color: var(--text-muted); margin-bottom: 0.22rem; }
+.chart-tip .tip-row { display: flex; align-items: center; gap: 0.4rem; }
+.chart-tip .tip-row .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.chart-tip .tip-row b { font-weight: 700; margin-left: auto; padding-left: 0.7rem; }
+
+.chart-legend { display: flex; flex-wrap: wrap; gap: 1.2rem; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.7rem; }
 .chart-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; }
 .chart-legend .lw { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--text-muted); margin-right: 0.35rem; vertical-align: 4px; }
 .chart-legend .lw.dashed { border-top-style: dashed; }
+.chart-legend .bar { display: inline-block; width: 10px; height: 12px; border-radius: 1px; margin-right: 0.35rem; vertical-align: -2px; }
 
 /* ---- slug animation ---- */
-.anim-track-wrap svg { display: block; width: 100%; height: 150px; }
-#slug-marker { transition: cx 0.06s linear; }
+.anim-track-wrap svg { display: block; width: 100%; height: 150px; min-width: 520px; }
+.anim-track-scroll { overflow-x: auto; }
+/* No transition on cx: playback drives it from requestAnimationFrame every frame, so
+   a 60ms interpolation just made the marker lag its own trajectory and rubber-band. */
 .coil-band { transition: fill-opacity 0.15s ease, stroke-width 0.15s ease; }
 .coil-band.coil-energized { fill: var(--good); fill-opacity: 0.55; stroke: var(--good); stroke-width: 2; }
 .anim-controls { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.9rem; flex-wrap: wrap; }
-.anim-controls input[type="range"] { flex: 1 1 200px; min-width: 160px; accent-color: var(--accent); }
+.anim-controls input[type="range"] {
+  flex: 1 1 200px; min-width: 160px; accent-color: var(--accent); height: 40px;
+}
 .anim-controls select {
   font-family: var(--sans); font-size: 0.82rem; color: var(--text);
   background: var(--surface-alt); border: 1px solid var(--border); border-radius: 7px;
-  padding: 0.4rem 0.6rem; cursor: pointer;
+  padding: 0.4rem 0.6rem; min-height: 40px; cursor: pointer;
 }
+.anim-controls .speed-label { font-size: 0.78rem; color: var(--text-muted); }
 .anim-readout {
-  font-family: var(--mono); font-size: 0.78rem; color: var(--text-muted);
+  font-family: var(--mono); font-size: 0.82rem; color: var(--text-muted);
   display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.7rem;
 }
-.anim-readout b { color: var(--text); font-weight: 600; }
+.anim-readout b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .anim-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem; }
 .anim-hint code { font-family: var(--mono); font-size: 0.9em; }
+.kbd-hint { font-size: 0.74rem; color: var(--text-muted); margin-top: 0.55rem; }
+.kbd-hint kbd {
+  font-family: var(--mono); font-size: 0.92em; background: var(--surface-alt);
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px;
+  padding: 0.05rem 0.32rem; color: var(--text);
+}
 
 .spec-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem;
@@ -266,23 +394,87 @@ table.history-table tr:nth-child(even) { background: var(--surface-alt); }
 .fault-hi { color: var(--bad); font-weight: 700; }
 
 .heatmap-wrap { overflow-x: auto; }
-table.heatmap { border-collapse: collapse; font-family: var(--mono); font-size: 0.72rem; }
+table.heatmap { border-collapse: separate; border-spacing: 2px; font-family: var(--mono); font-size: 0.72rem; }
 table.heatmap th, table.heatmap td { padding: 0.35rem 0.5rem; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
-table.heatmap th { color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); }
-table.heatmap td.row-label { text-align: right; border-right: 1px solid var(--border); color: var(--text-muted); padding-right: 0.7rem; }
-table.heatmap td.cell { border-radius: 3px; color: #0a0e12; font-weight: 600; }
-.corner { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+table.heatmap th { color: var(--text-muted); font-weight: 500; }
+table.heatmap td.row-label { text-align: right; color: var(--text-muted); padding-right: 0.7rem; }
+/* Cell text colour is set per-cell in JS from the cell's own luminance. It used to be
+   a hardcoded near-black, which fell to 1.3:1 against the dark end of the ramp. */
+table.heatmap td.cell { border-radius: 3px; font-weight: 600; }
+table.heatmap .axis-b-title { color: var(--text-muted); font-weight: 600; padding-bottom: 0.3rem; }
+.heatmap-layout { display: flex; align-items: stretch; gap: 0.5rem; }
+.axis-a-title {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 0.72rem; font-weight: 600; color: var(--text-muted);
+}
+.scale-legend { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.9rem; font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); }
+.scale-legend .ramp { height: 10px; width: 180px; border-radius: 3px; border: 1px solid var(--border); }
 
-footer { border-top: 1px solid var(--border); padding-top: 1.1rem; font-size: 0.75rem; color: var(--text-muted); font-family: var(--mono); }
-footer p { max-width: 82ch; }
+footer { border-top: 1px solid var(--border); padding-top: 1.1rem; font-size: 0.75rem; color: var(--text-muted); }
+footer p { max-width: 82ch; margin: 0; }
+
+/* One callout component with severity variants -- previously every non-error use
+   re-coloured .error-box with inline styles, so the palette drifted per call site. */
+.callout {
+  display: flex; gap: 0.6rem; align-items: flex-start;
+  border-radius: 8px; padding: 0.75rem 0.95rem;
+  font-size: 0.84rem; line-height: 1.45;
+  border: 1px solid transparent;
+}
+.callout + .callout { margin-top: 0.6rem; }
+.callout .ico { flex: none; font-size: 1rem; line-height: 1.3; }
+.callout.bad { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.callout.warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.callout.info { background: var(--info-soft); color: var(--info); border-color: color-mix(in srgb, var(--info) 30%, transparent); }
+.callout code { font-family: var(--mono); font-size: 0.9em; }
 .error-box { background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 0.8rem 1rem; font-family: var(--mono); font-size: 0.82rem; }
+
+@media (max-width: 640px) {
+  body { padding: 1.2rem 0.9rem 3rem; }
+  h1 { font-size: 1.4rem; }
+  .page-head { flex-wrap: wrap; }
+  .loader { position: static; }
+  .hero { padding: 1.1rem 1rem; }
+  .hero-best { margin-left: 0; width: 100%; }
+  .section-head { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  .section-head .note { text-align: left; }
+  /* side by side these two wrap mid-value ("... / 40" and "ETA 4m / 48s") */
+  .progress-labels { flex-direction: column; gap: 0.15rem; }
+  .theme-toggle { margin-left: 0; }
+}
+
+@media print {
+  body { max-width: none; padding: 0; }
+  .loader, .theme-toggle, .anim-controls, .kbd-hint, details.shapes { display: none; }
+  .card, .hero, .spec-group { break-inside: avoid; box-shadow: none; }
+  section { break-inside: avoid-page; }
+}
 </style>
 </head>
 <body>
 
-<p class="eyebrow">emac_sim / mcp_server.py</p>
-<h1>EMAC Optimizer Dashboard</h1>
-<p class="subtitle">Live view of a design-space search running through the <code>run_optimization</code> MCP tool, or any saved <code>get_latest_result</code> / <code>simulate_design_detailed</code> / <code>sensitivity_sweep</code> / <code>fem_coupling_analysis</code> snapshot. Point it at <code>build/optimize_results/latest.json</code> to watch a run in progress, or <code>build/fem_lut/latest_analysis.json</code> for a FEM coupling comparison.</p>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">emac_sim / mcp_server.py</p>
+    <h1>EMAC Optimizer Dashboard</h1>
+    <p class="subtitle">Live view of a design-space search running through the <code>run_optimization</code> MCP tool. Point it at <code>build/optimize_results/latest.json</code> to watch a run in progress.</p>
+    <details class="shapes">
+      <summary>Also reads four other snapshot shapes…</summary>
+      <ul class="shape-list">
+        <li><code>simulate_design_detailed</code> — full time series plus an animation of the slug's simulated motion.</li>
+        <li><code>sensitivity_sweep</code> — one knob's main-effect curve, every other knob held at baseline.</li>
+        <li><code>interaction_sweep</code> — a pairwise exit-speed grid over two knobs.</li>
+        <li><code>fem_coupling_analysis</code> — analytic vs. FEM-reference coupling for one coil, from <code>build/fem_lut/latest_analysis.json</code>.</li>
+      </ul>
+    </details>
+  </div>
+  <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Colour theme">
+    <button type="button" data-theme-set="auto" aria-pressed="true">auto</button>
+    <button type="button" data-theme-set="light" aria-pressed="false">light</button>
+    <button type="button" data-theme-set="dark" aria-pressed="false">dark</button>
+  </div>
+</div>
 
 <div class="loader" id="loader">
   <button class="btn primary" id="btn-open">Open results file…</button>
@@ -290,7 +482,7 @@ footer p { max-width: 82ch; }
   <button class="btn" id="btn-paste">Paste JSON…</button>
   <div class="divider"></div>
   <span class="hint">or drag a .json file anywhere on this page</span>
-  <div class="live-indicator" id="live-indicator">
+  <div class="live-indicator" id="live-indicator" aria-live="polite">
     <span class="live-dot" id="live-dot"></span>
     <span id="live-text">no file loaded</span>
   </div>
@@ -311,17 +503,18 @@ footer p { max-width: 82ch; }
     file…" keeps watching the file and updates this page live as new generations complete;
     other browsers can re-open or drop the file again to refresh.</p>
   </div>
+  <noscript>
+    <div class="callout warn" style="margin-top:1rem"><span class="ico">⚠</span><div>
+      This dashboard renders entirely in the browser, so it needs JavaScript enabled.</div></div>
+  </noscript>
 </div>
 
 <footer>
-  <p>Auto-detects five JSON shapes: an optimizer status/result snapshot (has a "status"
-  field), a <code>simulate_design_detailed</code> time series (has "t"/"x"/"v" arrays), a
-  <code>sensitivity_sweep</code> main-effect curve (has "knob"/"points") or a pairwise
-  interaction grid (has "knob_a"/"knob_b"/"grid") from <code>design_sensitivity.py</code>,
-  and a <code>fem_coupling_analysis</code> result (has "kind": "fem_coupling") comparing the
-  analytic and FEM-reference coupling shapes for one coil -- see
-  <a href="../../docs/FEM_PIPELINE.md">docs/FEM_PIPELINE.md</a>. Nothing here is uploaded
-  anywhere -- everything runs and stays in this page.</p>
+  <p>Shape is auto-detected from the JSON's own keys — <code>status</code>, <code>t</code>/<code>x</code>/<code>v</code>,
+  <code>knob</code>/<code>points</code>, <code>knob_a</code>/<code>knob_b</code>/<code>grid</code>, or
+  <code>kind: "fem_coupling"</code>. FEM background:
+  <a href="../../docs/FEM_PIPELINE.md">docs/FEM_PIPELINE.md</a>.
+  Nothing is uploaded anywhere — every file you open stays in this page.</p>
 </footer>
 
 <script>
@@ -345,6 +538,200 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* ---------------- chart primitives ----------------
+   Every chart is drawn into a fixed 900-unit viewBox and stretched to the card
+   width. Shared here: "nice" tick generation, gridlines with real value labels,
+   independent left/right value axes, and a pointer readout -- before this, none
+   of the charts carried a single axis value, so a curve's shape was visible but
+   no quantity could actually be read off it. */
+
+const CHART_W = 900;
+const CHARTS = new Map();
+let chartSeq = 0;
+
+function niceNum(range, round) {
+  if (!(range > 0) || !Number.isFinite(range)) return 1;
+  const exp = Math.floor(Math.log10(range));
+  const f = range / Math.pow(10, exp);
+  const nf = round
+    ? (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10)
+    : (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10);
+  return nf * Math.pow(10, exp);
+}
+
+/** Round a data range out to whole "nice" steps and enumerate the tick values. */
+function axisScale(lo, hi, count) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) { lo = 0; hi = 1; }
+  if (hi === lo) { const pad = (Math.abs(lo) || 1) * 0.5; lo -= pad; hi += pad; }
+  const step = niceNum(niceNum(hi - lo, false) / Math.max(1, (count || 5) - 1), true);
+  const min = Math.floor(lo / step) * step;
+  const max = Math.ceil(hi / step) * step;
+  const ticks = [];
+  for (let i = 0, n = Math.round((max - min) / step); i <= n; i++) {
+    const v = min + i * step;
+    ticks.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+  }
+  const d = Math.max(0, Math.min(6, Math.ceil(-Math.log10(step))));
+  return { min, max, step, ticks, fmt: v => v.toFixed(d) };
+}
+
+/**
+ * Line chart with independent left/right value axes.
+ * opts: { x, xLabel, left:{label,series:[{label,ys,color,dashed}]}, right:{...},
+ *         height, xFmt, zeroLine }
+ * Binding series to separate axes is what stops a 0..0.22 m position trace from
+ * collapsing onto the baseline when it shares a plot with a 0..10 m/s velocity.
+ */
+function lineChart(opts) {
+  const xs = opts.x || [];
+  const h = opts.height || 240;
+  const hasRight = !!(opts.right && opts.right.series && opts.right.series.length);
+  // padT leaves a clear band for the axis titles above the plot -- at the old 18 the
+  // title sat 6 units from the topmost tick label and the two overprinted.
+  const padL = 58, padR = hasRight ? 60 : 20, padT = 34, padB = 40;
+  if (!xs.length) return `<div class="empty">No samples in this result.</div>`;
+
+  const plotW = CHART_W - padL - padR, plotH = h - padT - padB;
+  const xa = axisScale(Math.min(...xs), Math.max(...xs), 6);
+  const sx = v => padL + (v - xa.min) / ((xa.max - xa.min) || 1) * plotW;
+
+  const build = side => {
+    if (!side || !side.series || !side.series.length) return null;
+    const all = side.series.flatMap(s => s.ys).filter(Number.isFinite);
+    // Only extend the axis to zero when the data is already near it -- forcing a
+    // 26..59 degC trace to start at 0 wasted two thirds of the plot height.
+    const dLo = Math.min(...all), dHi = Math.max(...all);
+    const lo = (dLo > 0 && dLo < (dHi - dLo) * 0.45) ? 0 : dLo;
+    const sc = axisScale(lo, dHi, 5);
+    return Object.assign(sc, {
+      label: side.label,
+      series: side.series,
+      sy: v => padT + plotH - (v - sc.min) / ((sc.max - sc.min) || 1) * plotH,
+    });
+  };
+  const L = build(opts.left), R = build(opts.right);
+
+  let g = "";
+  // horizontal gridlines follow the left axis; ticks on both edges
+  L.ticks.forEach(v => {
+    const y = L.sy(v).toFixed(1);
+    g += `<line class="grid" x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" />`;
+    g += `<text class="tick" x="${padL - 8}" y="${y}" text-anchor="end" dominant-baseline="middle">${L.fmt(v)}</text>`;
+  });
+  if (R) R.ticks.forEach(v => {
+    const y = R.sy(v).toFixed(1);
+    g += `<text class="tick" x="${padL + plotW + 8}" y="${y}" text-anchor="start" dominant-baseline="middle">${R.fmt(v)}</text>`;
+  });
+  xa.ticks.forEach(v => {
+    const x = sx(v).toFixed(1);
+    g += `<line class="grid" x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" />`;
+    g += `<text class="tick" x="${x}" y="${(padT + plotH + 18).toFixed(1)}" text-anchor="middle">${(opts.xFmt || xa.fmt)(v)}</text>`;
+  });
+  g += `<line class="axis-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" />`;
+  g += `<line class="axis-line" x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" />`;
+  if (R) g += `<line class="axis-line" x1="${padL + plotW}" y1="${padT}" x2="${padL + plotW}" y2="${padT + plotH}" />`;
+
+  const model = { xs, plot: { padL, padR, padT, padB, plotW, plotH, h }, xa, sides: [], xLabel: opts.xLabel || "" };
+  let paths = "", dots = "";
+  [L, R].forEach(side => {
+    if (!side) return;
+    side.series.forEach(s => {
+      const d = xs.map((xv, i) => {
+        const y = s.ys[i];
+        return `${i === 0 ? "M" : "L"}${sx(xv).toFixed(1)},${side.sy(Number.isFinite(y) ? y : side.min).toFixed(1)}`;
+      }).join(" ");
+      paths += `<path class="series" d="${d}" stroke="${s.color}" stroke-width="${s.width || 1.9}"${s.dashed ? ' stroke-dasharray="6,4"' : ""} />`;
+      dots += `<circle class="chart-dot" r="3.6" fill="${s.color}" stroke="var(--surface)" stroke-width="1.5" cx="0" cy="0" />`;
+      model.sides.push({ label: s.label, ys: s.ys, color: s.color, sideMin: side.min, sideMax: side.max, fmt: side.fmt });
+    });
+  });
+
+  // axis titles, coloured to the series they scale when a side has exactly one
+  const lTitle = `<text class="axis-title" x="${padL - 6}" y="${padT - 14}" text-anchor="start" fill="${L.series.length === 1 ? L.series[0].color : "var(--text-muted)"}">${escapeHtml(L.label || "")}</text>`;
+  const rTitle = R ? `<text class="axis-title" x="${padL + plotW + 6}" y="${padT - 14}" text-anchor="end" fill="${R.series.length === 1 ? R.series[0].color : "var(--text-muted)"}">${escapeHtml(R.label || "")}</text>` : "";
+  const xTitle = `<text class="axis-title" x="${padL + plotW}" y="${h - 4}" text-anchor="end" fill="var(--text-muted)">${escapeHtml(opts.xLabel || "")}</text>`;
+
+  const id = `chart-${++chartSeq}`;
+  CHARTS.set(id, model);
+  return `<div class="chart-wrap" data-chart="${id}">
+    <div class="chart-scroll"><svg class="chart" viewBox="0 0 ${CHART_W} ${h}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(opts.ariaLabel || opts.xLabel || "chart")}">
+      ${g}${paths}
+      <line class="chart-cursor" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" />
+      ${dots}
+      ${lTitle}${rTitle}${xTitle}
+      <rect class="chart-hit" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" />
+    </svg></div>
+    <div class="chart-tip"></div>
+  </div>`;
+}
+
+/** Hold every chart label at a constant painted size regardless of card width. */
+function fitChartText(root) {
+  (root || document).querySelectorAll("svg.chart, svg.schematic").forEach(svg => {
+    const vbW = svg.viewBox.baseVal && svg.viewBox.baseVal.width;
+    const w = svg.getBoundingClientRect().width;
+    if (!vbW || !w) return;
+    const inv = vbW / w;
+    svg.style.setProperty("--tick-fs", (11 * inv).toFixed(2) + "px");
+    svg.style.setProperty("--axis-fs", (11.5 * inv).toFixed(2) + "px");
+  });
+}
+
+function nearestIndex(arr, v) {
+  let lo = 0, hi = arr.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < v) lo = mid + 1; else hi = mid; }
+  if (lo > 0 && Math.abs(arr[lo - 1] - v) <= Math.abs(arr[lo] - v)) lo--;
+  return lo;
+}
+
+/** Attach the crosshair + value tooltip to every chart currently in the DOM. */
+function wireCharts(root) {
+  (root || document).querySelectorAll(".chart-wrap[data-chart]").forEach(wrap => {
+    const model = CHARTS.get(wrap.dataset.chart);
+    const svg = wrap.querySelector("svg.chart");
+    if (!model || !svg) return;
+    const cursor = svg.querySelector(".chart-cursor");
+    const dots = [...svg.querySelectorAll(".chart-dot")];
+    const tip = wrap.querySelector(".chart-tip");
+    const { padL, plotW, padT, plotH } = model.plot;
+
+    const move = ev => {
+      const r = svg.getBoundingClientRect();
+      if (!r.width) return;
+      const ux = (ev.clientX - r.left) / r.width * CHART_W;
+      const frac = Math.max(0, Math.min(1, (ux - padL) / plotW));
+      const xVal = model.xa.min + frac * (model.xa.max - model.xa.min);
+      const i = nearestIndex(model.xs, xVal);
+      const snapU = padL + (model.xs[i] - model.xa.min) / ((model.xa.max - model.xa.min) || 1) * plotW;
+      cursor.setAttribute("x1", snapU.toFixed(1));
+      cursor.setAttribute("x2", snapU.toFixed(1));
+      let rows = "";
+      model.sides.forEach((s, k) => {
+        const y = s.ys[i];
+        const frac = ((Number.isFinite(y) ? y : s.sideMin) - s.sideMin) / ((s.sideMax - s.sideMin) || 1);
+        // the convergence chart's fault series is drawn in a separate lower band
+        const band = model.dotBand && model.dotBand.index === k ? model.dotBand : null;
+        const uy = band
+          ? band.top + band.height - frac * band.height
+          : padT + plotH - frac * plotH;
+        if (dots[k]) { dots[k].setAttribute("cx", snapU.toFixed(1)); dots[k].setAttribute("cy", uy.toFixed(1)); }
+        rows += `<div class="tip-row"><span class="sw" style="background:${s.color}"></span>${escapeHtml(s.label)}<b>${Number.isFinite(y) ? s.fmt(y) : "—"}</b></div>`;
+      });
+      tip.innerHTML = `<div class="tip-head">${escapeHtml(model.xLabel)} ${model.xa.fmt(model.xs[i])}</div>${rows}`;
+      // Clamp on the tooltip's measured width -- it is centred by a -50% transform,
+      // so a fixed guess let a wide readout hang past the card and scroll the page.
+      const px = snapU / CHART_W * r.width;
+      const half = tip.offsetWidth / 2 + 4;
+      tip.style.left = Math.max(half, Math.min(Math.max(half, r.width - half), px)) + "px";
+      tip.style.top = (padT + plotH * 0.28) / model.plot.h * r.height + "px";
+      wrap.classList.add("hovering");
+    };
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerleave", () => wrap.classList.remove("hovering"));
+  });
+  fitChartText(root);
+}
+
 /* ---------------- shape detection + top-level render ---------------- */
 
 function detectShape(obj) {
@@ -361,15 +748,26 @@ function detectShape(obj) {
 function renderData(obj) {
   const shape = detectShape(obj);
   const content = document.getElementById("content");
+  CHARTS.clear();
   if (shape === "optimizer") content.innerHTML = renderOptimizer(obj);
   else if (shape === "timeseries") { content.innerHTML = renderTimeseries(obj); wireSlugAnimation(obj); }
   else if (shape === "sweep") content.innerHTML = renderSweep(obj);
-  else if (shape === "interaction") content.innerHTML = renderInteraction(obj);
+  else if (shape === "interaction") { content.innerHTML = renderInteraction(obj); paintHeatmap(content); }
   else if (shape === "fem") content.innerHTML = renderFem(obj);
-  else content.innerHTML = `<div class="error-box">Unrecognized JSON shape -- expected an optimizer
-    status snapshot, a simulate_design_detailed result, a sensitivity_sweep /
-    interaction_sweep result, or a fem_coupling_analysis result. Got keys:
-    ${escapeHtml(Object.keys(obj || {}).join(", "))}</div>`;
+  else content.innerHTML = `<div class="callout bad"><span class="ico">✕</span><div>
+    <b>Unrecognized JSON shape.</b> Expected an optimizer status snapshot, a
+    <code>simulate_design_detailed</code> result, a <code>sensitivity_sweep</code> /
+    <code>interaction_sweep</code> result, or a <code>fem_coupling_analysis</code> result.<br>
+    Got keys: <code>${escapeHtml(Object.keys(obj || {}).join(", ")) || "(none)"}</code></div></div>`;
+  wireCharts(content);
+}
+
+// Charts are laid out in viewBox units, so a width change only needs the label
+// size renormalised -- no re-render.
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(() => fitChartText());
+  addEventListener("DOMContentLoaded", () => ro.observe(document.getElementById("content")));
+  if (document.readyState !== "loading") ro.observe(document.getElementById("content"));
 }
 
 /* ---------------- optimizer status view ---------------- */
@@ -406,41 +804,92 @@ function renderKnobSpec(knobs) {
     </div>`).join("")}</div>`;
 }
 
+/**
+ * Convergence: best-speed curve over a labelled value axis, with the per-generation
+ * fault rate as a bottom band on its own 0-100% scale.
+ * The two used to share one unlabelled canvas with the fault bars drawn in
+ * var(--border) -- 1.33:1 against the card, effectively invisible.
+ */
 function convergenceChart(history) {
-  const w = 900, h = 220, pad = 34;
   if (!history || !history.length) return `<div class="empty">No generations completed yet.</div>`;
+  const h = 280, padL = 58, padR = 54, padT = 34;
+  const bandH = 52, bandGap = 30, padB = 40;
+  const plotW = CHART_W - padL - padR;
+  const plotH = h - padT - padB - bandH - bandGap;
+
   const gens = history.map(p => p.generation);
   const speeds = history.map(p => p.best_speed_so_far);
   const faults = history.map(p => p.fault_fraction_this_gen);
-  const gMin = Math.min(...gens), gMax = Math.max(...gens);
-  const sMax = Math.max(...speeds, 1e-6) * 1.15;
-  const sx = g => pad + (gMax === gMin ? 0 : (g - gMin) / (gMax - gMin)) * (w - 2 * pad);
-  const syTop = h - pad - 70;   // convergence curve occupies the upper region
-  const syScale = s => (h - pad) - 70 - (s / sMax) * (h - 2 * pad - 70);
-  const line = gens.map((g, i) => `${i === 0 ? "M" : "L"}${sx(g).toFixed(1)},${syScale(speeds[i]).toFixed(1)}`).join(" ");
-  const fill = line + ` L${sx(gens[gens.length - 1]).toFixed(1)},${(h - pad - 70).toFixed(1)} L${sx(gens[0]).toFixed(1)},${(h - pad - 70).toFixed(1)} Z`;
-  const barW = Math.max(2, (w - 2 * pad) / gens.length * 0.6);
-  const barGap = (w - 2 * pad) / gens.length;
-  let bars = "";
-  gens.forEach((g, i) => {
-    const bh = faults[i] * 60;
-    const x = pad + i * barGap + (barGap - barW) / 2;
-    const y = h - pad - bh;
-    const isHigh = faults[i] >= 0.9;
-    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${isHigh ? "var(--bad)" : "var(--border)"}" rx="1.5" />`;
+
+  const xa = axisScale(Math.min(...gens), Math.max(...gens), 6);
+  const xaFmt = v => v.toFixed(0);
+  const ya = axisScale(0, Math.max(...speeds, 1e-6), 5);
+  const sx = g => padL + (g - xa.min) / ((xa.max - xa.min) || 1) * plotW;
+  const sy = s => padT + plotH - (s - ya.min) / ((ya.max - ya.min) || 1) * plotH;
+  const bandTop = padT + plotH + bandGap;
+  const by = f => bandTop + bandH - Math.max(0, Math.min(1, f)) * bandH;
+
+  let g = "";
+  ya.ticks.forEach(v => {
+    const y = sy(v).toFixed(1);
+    g += `<line class="grid" x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" />`;
+    g += `<text class="tick" x="${padL - 8}" y="${y}" text-anchor="end" dominant-baseline="middle">${ya.fmt(v)}</text>`;
   });
-  let dots = "";
-  gens.forEach((g, i) => { dots += `<circle cx="${sx(g).toFixed(1)}" cy="${syScale(speeds[i]).toFixed(1)}" r="2.2" fill="var(--accent)" />`; });
-  return `<svg viewBox="0 0 ${w} ${h}">
-    <line x1="${pad}" y1="${(h - pad - 70).toFixed(1)}" x2="${w - pad}" y2="${(h - pad - 70).toFixed(1)}" stroke="var(--border)" />
-    <line x1="${pad}" y1="${(h - pad).toFixed(1)}" x2="${w - pad}" y2="${(h - pad).toFixed(1)}" stroke="var(--border)" />
-    <path d="${fill}" fill="var(--accent)" opacity="0.1" />
-    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" />
-    ${dots}
-    ${bars}
-    <text x="${pad}" y="16" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">best speed so far (m/s)</text>
-    <text x="${pad}" y="${(h - pad - 76).toFixed(1)}" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">fault % this gen</text>
-  </svg>`;
+  xa.ticks.forEach(v => {
+    const x = sx(v).toFixed(1);
+    g += `<line class="grid" x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" />`;
+    g += `<text class="tick" x="${x}" y="${(h - 20).toFixed(1)}" text-anchor="middle">${xaFmt(v)}</text>`;
+  });
+  [0, 0.5, 1].forEach(f => {
+    const y = by(f).toFixed(1);
+    g += `<line class="grid" x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" />`;
+    g += `<text class="tick" x="${padL - 8}" y="${y}" text-anchor="end" dominant-baseline="middle">${(f * 100).toFixed(0)}%</text>`;
+  });
+  g += `<line class="axis-line" x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT + plotH}" />`;
+  g += `<line class="axis-line" x1="${padL}" y1="${(bandTop + bandH).toFixed(1)}" x2="${padL + plotW}" y2="${(bandTop + bandH).toFixed(1)}" />`;
+
+  const line = gens.map((gv, i) => `${i === 0 ? "M" : "L"}${sx(gv).toFixed(1)},${sy(speeds[i]).toFixed(1)}`).join(" ");
+  const area = line + ` L${sx(gens[gens.length - 1]).toFixed(1)},${sy(ya.min).toFixed(1)} L${sx(gens[0]).toFixed(1)},${sy(ya.min).toFixed(1)} Z`;
+
+  const slot = plotW / Math.max(1, gens.length);
+  const barW = Math.max(2, Math.min(18, slot * 0.66));
+  let bars = "";
+  gens.forEach((gv, i) => {
+    const y = by(faults[i]), bh = bandTop + bandH - y;
+    const isHigh = faults[i] >= 0.9;
+    bars += `<rect x="${(sx(gv) - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0, bh).toFixed(1)}" fill="${isHigh ? "var(--bad)" : "var(--fault-bar)"}" rx="1.5" />`;
+  });
+
+  const model = {
+    xs: gens, xLabel: "generation",
+    plot: { padL, padR, padT, padB, plotW, plotH, h },
+    xa: Object.assign({}, xa, { fmt: xaFmt }),
+    sides: [
+      { label: "best speed", ys: speeds, color: "var(--series-a)", sideMin: ya.min, sideMax: ya.max, fmt: v => `${v.toFixed(2)} m/s` },
+      { label: "fault rate", ys: faults, color: "var(--fault-bar)", sideMin: 0, sideMax: 1, fmt: v => `${(v * 100).toFixed(0)}%` },
+    ],
+  };
+  // The fault series lives in the lower band, so it needs its own dot placement.
+  model.dotBand = { index: 1, top: bandTop, height: bandH };
+  const id = `chart-${++chartSeq}`;
+  CHARTS.set(id, model);
+
+  return `<div class="chart-wrap" data-chart="${id}">
+    <div class="chart-scroll"><svg class="chart" viewBox="0 0 ${CHART_W} ${h}" preserveAspectRatio="none" role="img" aria-label="Best speed so far and per-generation fault rate, by generation">
+      ${g}
+      <path d="${area}" fill="var(--series-a)" opacity="0.12" />
+      <path class="series" d="${line}" stroke="var(--series-a)" stroke-width="2.1" />
+      ${bars}
+      <line class="chart-cursor" x1="0" y1="${padT}" x2="0" y2="${(bandTop + bandH).toFixed(1)}" />
+      <circle class="chart-dot" r="3.6" fill="var(--series-a)" stroke="var(--surface)" stroke-width="1.5" cx="0" cy="0" />
+      <circle class="chart-dot" r="3.6" fill="var(--fault-bar)" stroke="var(--surface)" stroke-width="1.5" cx="0" cy="0" />
+      <text class="axis-title" x="${padL - 6}" y="${padT - 14}" fill="var(--series-a)">best speed so far (m/s)</text>
+      <text class="axis-title" x="${padL - 6}" y="${(bandTop - 11).toFixed(1)}" fill="var(--fault-bar)">fault rate this generation</text>
+      <text class="axis-title" x="${padL + plotW}" y="${h - 4}" text-anchor="end" fill="var(--text-muted)">generation</text>
+      <rect class="chart-hit" x="${padL}" y="${padT}" width="${plotW}" height="${(bandTop + bandH - padT).toFixed(1)}" fill="transparent" />
+    </svg></div>
+    <div class="chart-tip"></div>
+  </div>`;
 }
 
 function renderOptimizer(obj) {
@@ -477,7 +926,7 @@ function renderOptimizer(obj) {
     </tr>`).join("");
 
   return `
-    ${isError ? `<div class="error-box" style="margin-bottom:1rem">✕ Search failed: ${escapeHtml(obj.error || "unknown error")}</div>` : ""}
+    ${isError ? `<div class="callout bad" style="margin-bottom:1rem"><span class="ico">✕</span><div><b>Search failed.</b> ${escapeHtml(obj.error || "unknown error")}</div></div>` : ""}
     <div class="hero">
       <div class="hero-top">
         <span class="pill ${pillClass}">${pillText}</span>
@@ -498,18 +947,21 @@ function renderOptimizer(obj) {
         ${isDone && obj.best_speed_search_estimate_m_s !== undefined ? `<div class="stat"><div class="k">search estimate</div><div class="v">${fmtNum(obj.best_speed_search_estimate_m_s, 2)}</div></div>` : ""}
         ${isDone && obj.femm_speed_m_s != null ? `<div class="stat"><div class="k">FEMM-verified</div><div class="v" style="color:var(--accent)">${fmtNum(obj.femm_speed_m_s, 2)}</div></div>` : ""}
       </div>
-      ${isDone && obj.femm_speed_m_s == null && obj.femm_note ? `<div class="note" style="margin-top:0.6rem">ℹ ${escapeHtml(obj.femm_note)}</div>` : ""}
+      ${isDone && obj.femm_speed_m_s == null && obj.femm_note ? `<div class="callout info" style="margin-top:0.9rem"><span class="ico">ℹ</span><div>${escapeHtml(obj.femm_note)}</div></div>` : ""}
     </div>
 
-    ${faultOverall >= 0.9 ? `<div class="error-box" style="margin-bottom:1.6rem">⚠ ${(faultOverall*100).toFixed(0)}% of candidates FAULTed or scored 0&nbsp;m/s -- bounds may be infeasible (tube length, current/voltage too low to bootstrap, etc.)</div>` : ""}
+    ${faultOverall >= 0.9 ? `<div class="callout bad" style="margin-bottom:1.6rem"><span class="ico">⚠</span><div>
+      <b>${(faultOverall * 100).toFixed(0)}% of candidates FAULTed or scored 0&nbsp;m/s.</b>
+      The bounds may be infeasible — check tube length, and whether current and voltage are high enough to bootstrap the slug.</div></div>` : ""}
 
     <section>
-      <div class="section-head"><h2>Convergence</h2><span class="note">best speed so far, and each generation's fault rate</span></div>
-      <div class="card chart-wrap">
+      <div class="section-head"><h2>Convergence</h2><span class="note">best speed so far, and each generation's fault rate · hover for values</span></div>
+      <div class="card">
         ${convergenceChart(history)}
         <div class="chart-legend">
-          <span><span class="sw" style="background:var(--accent)"></span>best speed so far (line)</span>
-          <span><span class="sw" style="background:var(--border)"></span>fault % this generation (bars)</span>
+          <span><span class="sw" style="background:var(--series-a)"></span>best speed so far (line)</span>
+          <span><span class="bar" style="background:var(--fault-bar)"></span>fault rate this generation (bars)</span>
+          <span><span class="bar" style="background:var(--bad)"></span>generation ≥ 90% faulted</span>
         </div>
       </div>
     </section>
@@ -536,21 +988,23 @@ function renderOptimizer(obj) {
 
 /* ---------------- time-series (simulate_design_detailed) view ---------------- */
 
-function seriesChart(t, series, colors, labels, height) {
-  const w = 900, h = height || 200, pad = 34;
-  if (!t.length) return "";
-  const tMin = Math.min(...t), tMax = Math.max(...t);
-  const allY = series.flat();
-  const yMin = Math.min(0, ...allY), yMax = Math.max(...allY, 1e-6) * 1.08;
-  const sx = x => pad + (tMax === tMin ? 0 : (x - tMin) / (tMax - tMin)) * (w - 2 * pad);
-  const sy = y => (h - pad) - ((y - yMin) / ((yMax - yMin) || 1)) * (h - 2 * pad);
-  let svg = `<line x1="${pad}" y1="${sy(0).toFixed(1)}" x2="${w - pad}" y2="${sy(0).toFixed(1)}" stroke="var(--border)" />`;
-  series.forEach((s, si) => {
-    const path = t.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(s[i]).toFixed(1)}`).join(" ");
-    svg += `<path d="${path}" fill="none" stroke="${colors[si]}" stroke-width="1.75" />`;
+/**
+ * Two quantities against time, each on its own value axis.
+ * These pairs differ by orders of magnitude -- position spans ~0.22 m while
+ * velocity spans ~10 m/s, so on the single shared axis this used to draw, the
+ * position trace occupied 2% of the plot height and read as a flat line.
+ */
+function timePair(t, a, b, height) {
+  if (!t || !t.length) return `<div class="empty">No samples in this result.</div>`;
+  return lineChart({
+    x: t,
+    xLabel: "time (s)",
+    xFmt: v => v.toFixed(3),
+    height: height || 250,
+    ariaLabel: `${a.label} and ${b.label} against time`,
+    left: { label: a.label, series: [{ label: a.label, ys: a.ys, color: a.color }] },
+    right: { label: b.label, series: [{ label: b.label, ys: b.ys, color: b.color }] },
   });
-  return `<svg viewBox="0 0 ${w} ${h}">${svg}</svg>
-    <div class="chart-legend">${labels.map((l, i) => `<span><span class="sw" style="background:${colors[i]}"></span>${l}</span>`).join("")}</div>`;
 }
 
 /* ---------------- slug animation (replays simulate_design_detailed's ACTUAL trajectory) ---------------- */
@@ -605,10 +1059,12 @@ function renderSlugAnimationSection(obj) {
     <section>
       <div class="section-head"><h2>Slug animation</h2><span class="note">actual simulated trajectory -- coils energize exactly as the real supervisor drove them, not illustrative</span></div>
       <div class="card anim-track-wrap">
-        ${slugTrackSvg(obj)}
+        <div class="anim-track-scroll">${slugTrackSvg(obj)}</div>
         <div class="anim-controls">
-          <button class="btn primary" id="anim-play">▶ Play</button>
-          <input type="range" id="anim-scrub" min="0" max="1000" value="0" step="1" />
+          <button class="btn primary" id="anim-play" aria-label="Play animation">▶ Play</button>
+          <input type="range" id="anim-scrub" min="0" max="1000" value="0" step="1"
+                 aria-label="Scrub through the simulated trajectory" />
+          <label class="speed-label" for="anim-speed">speed</label>
           <select id="anim-speed">
             <option value="0.1">0.1×</option>
             <option value="0.25">0.25×</option>
@@ -617,13 +1073,15 @@ function renderSlugAnimationSection(obj) {
             <option value="20">20×</option>
           </select>
         </div>
-        <div class="anim-readout" id="anim-readout"></div>
+        <div class="anim-readout" id="anim-readout" aria-live="off"></div>
         <div class="chart-legend" style="margin-top:0.5rem">
           <span><span class="sw" style="background:var(--accent)"></span>coil</span>
           <span><span class="sw" style="background:var(--good)"></span>coil energized</span>
           <span><span class="sw" style="background:var(--warn)"></span>gate</span>
           <span><span class="sw" style="background:var(--bad)"></span>slug</span>
         </div>
+        <p class="kbd-hint">With the track focused: <kbd>Space</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> step
+          (hold <kbd>Shift</kbd> for 10×) · <kbd>Home</kbd> <kbd>End</kbd> jump to start/end.</p>
       </div>
     </section>
   `;
@@ -679,17 +1137,37 @@ function wireSlugAnimation(obj) {
     rafId = requestAnimationFrame(step);
   }
 
-  playBtn.addEventListener("click", () => {
-    playing = !playing;
+  function setPlaying(on) {
+    playing = on;
     playBtn.textContent = playing ? "⏸ Pause" : "▶ Play";
+    playBtn.setAttribute("aria-label", playing ? "Pause animation" : "Play animation");
     if (playing) { lastWall = null; rafId = requestAnimationFrame(step); }
     else if (rafId) cancelAnimationFrame(rafId);
-  });
+  }
+
+  playBtn.addEventListener("click", () => setPlaying(!playing));
   scrub.addEventListener("input", () => {
-    playing = false; playBtn.textContent = "▶ Play";
-    if (rafId) cancelAnimationFrame(rafId);
+    setPlaying(false);
     animTime = tMin + (Number(scrub.value) / 1000) * (tMax - tMin);
     renderFrame(animTime);
+  });
+
+  // Keyboard transport. Scrubbing a 500-sample trajectory to the exact instant a
+  // coil hands off is fiddly with a pointer; arrow keys step sample by sample.
+  track.setAttribute("tabindex", "0");
+  track.setAttribute("role", "application");
+  track.setAttribute("aria-label", "Slug trajectory animation. Space plays or pauses, arrow keys step through samples.");
+  track.addEventListener("keydown", ev => {
+    const stride = ev.shiftKey ? 10 : 1;
+    let idx = sampleIndexAt(animTime);
+    if (ev.key === " " || ev.key === "Spacebar") { setPlaying(!playing); }
+    else if (ev.key === "ArrowRight") { idx = Math.min(t.length - 1, idx + stride); }
+    else if (ev.key === "ArrowLeft") { idx = Math.max(0, idx - stride); }
+    else if (ev.key === "Home") { idx = 0; }
+    else if (ev.key === "End") { idx = t.length - 1; }
+    else return;
+    ev.preventDefault();
+    if (ev.key !== " " && ev.key !== "Spacebar") { setPlaying(false); animTime = t[idx]; renderFrame(animTime); }
   });
 
   renderFrame(tMin);
@@ -697,7 +1175,13 @@ function wireSlugAnimation(obj) {
 
 function renderTimeseries(obj) {
   const t = obj.t || [];
-  const gateMarks = (obj.gate_t || []).map((gt, i) => `<span class="stat"><div class="k">gate ${obj.gate_index ? obj.gate_index[i] : i}</div><div class="v">${fmtNum(obj.gate_v[i], 2)} m/s @ ${fmtNum(gt, 4)}s</div></span>`).join("");
+  // Speed is the headline number and time is supporting detail: as one string they
+  // wrapped mid-value, so the grid read as a column of orphaned timestamps.
+  const gateMarks = (obj.gate_t || []).map((gt, i) => `<div class="stat">
+    <div class="k">gate ${obj.gate_index ? obj.gate_index[i] : i}</div>
+    <div class="v">${fmtNum(obj.gate_v[i], 2)} <span class="unit">m/s</span></div>
+    <div class="sub">@ ${fmtNum(gt, 4)}s</div>
+  </div>`).join("");
   return `
     <div class="hero">
       <div class="hero-top">
@@ -708,12 +1192,26 @@ function renderTimeseries(obj) {
     </div>
     ${renderSlugAnimationSection(obj)}
     <section>
-      <div class="section-head"><h2>Position &amp; velocity</h2><span class="note">${t.length} samples</span></div>
-      <div class="card chart-wrap">${seriesChart(t, [obj.x || [], obj.v || []], ["var(--accent)", "var(--warn)"], ["position (m)", "velocity (m/s)"])}</div>
+      <div class="section-head"><h2>Position &amp; velocity</h2><span class="note">${t.length} samples · hover for values</span></div>
+      <div class="card">${timePair(t,
+        { label: "position (m)", ys: obj.x || [], color: "var(--series-a)" },
+        { label: "velocity (m/s)", ys: obj.v || [], color: "var(--series-b)" })}
+        <div class="chart-legend">
+          <span><span class="sw" style="background:var(--series-a)"></span>position (m) — left axis</span>
+          <span><span class="sw" style="background:var(--series-b)"></span>velocity (m/s) — right axis</span>
+        </div>
+      </div>
     </section>
     <section>
-      <div class="section-head"><h2>Active coil current &amp; temperature</h2></div>
-      <div class="card chart-wrap">${seriesChart(t, [obj.active_current || [], obj.active_temperature_c || []], ["var(--accent)", "var(--bad)"], ["current (A)", "temperature (°C)"])}</div>
+      <div class="section-head"><h2>Active coil current &amp; temperature</h2><span class="note">the coil the supervisor was driving at each instant</span></div>
+      <div class="card">${timePair(t,
+        { label: "current (A)", ys: obj.active_current || [], color: "var(--series-a)" },
+        { label: "temperature (°C)", ys: obj.active_temperature_c || [], color: "var(--series-c)" })}
+        <div class="chart-legend">
+          <span><span class="sw" style="background:var(--series-a)"></span>current (A) — left axis</span>
+          <span><span class="sw" style="background:var(--series-c)"></span>temperature (°C) — right axis</span>
+        </div>
+      </div>
     </section>
     <section>
       <div class="section-head"><h2>Design</h2></div>
@@ -727,32 +1225,40 @@ function renderTimeseries(obj) {
 function renderSweep(obj) {
   const pts = obj.points || [];
   const isCat = pts.some(p => typeof p.value !== "number");
-  const w = 900, h = 240, pad = 40;
-  const xs = pts.map((p, i) => isCat ? i : p.value);
+  const xs = pts.map((p, i) => (isCat ? i : p.value));
   const ys = pts.map(p => p.speed);
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMax = Math.max(...ys, 1e-6) * 1.1;
-  const sx = x => pad + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (w - 2 * pad);
-  const sy = y => (h - pad) - (y / yMax) * (h - 2 * pad);
-  const line = xs.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(ys[i]).toFixed(1)}`).join(" ");
-  const dots = xs.map((x, i) => `<circle cx="${sx(x).toFixed(1)}" cy="${sy(ys[i]).toFixed(1)}" r="3" fill="var(--accent)" />`).join("");
-  const labels = xs.map((x, i) => `<text x="${sx(x).toFixed(1)}" y="${h - pad + 16}" font-size="9" font-family="ui-monospace,monospace" fill="var(--text-muted)" text-anchor="middle">${escapeHtml(String(pts[i].value))}</text>`).join("");
+  const best = ys.indexOf(Math.max(...ys));
+  // Categorical knobs (pump_envelope, driver_bipolar) have no numeric axis, so the
+  // tick label falls back to the category name at its slot index.
+  const xFmt = isCat
+    ? v => { const i = Math.round(v); return pts[i] ? String(pts[i].value) : ""; }
+    : undefined;
+
+  const chart = lineChart({
+    x: xs,
+    xLabel: obj.knob || "value",
+    xFmt,
+    height: 260,
+    ariaLabel: `Exit speed against ${obj.knob}`,
+    left: { label: "exit speed (m/s)", series: [{ label: "exit speed", ys, color: "var(--series-a)" }] },
+  });
+
   return `
     <div class="hero">
       <div class="hero-top">
         <span class="pill neutral">Sensitivity sweep</span>
-        <span class="hero-best" style="font-size:1.1rem">${obj.knob}</span>
+        <span style="font-family:var(--mono);font-size:0.82rem;color:var(--text-muted)">${pts.length} points</span>
+        <span class="hero-best" style="font-size:1.15rem">${escapeHtml(String(obj.knob))}</span>
       </div>
+      ${pts.length ? `<div class="hero-stats">
+        <div class="stat"><div class="k">best value</div><div class="v">${escapeHtml(String(pts[best].value))}</div></div>
+        <div class="stat"><div class="k">speed there</div><div class="v">${fmtNum(ys[best], 2)} m/s</div></div>
+        <div class="stat"><div class="k">range across sweep</div><div class="v">${fmtNum(Math.max(...ys) - Math.min(...ys), 2)} m/s</div></div>
+      </div>` : ""}
     </div>
     <section>
-      <div class="section-head"><h2>Main-effect curve</h2><span class="note">every other knob held at baseline</span></div>
-      <div class="card chart-wrap">
-        <svg viewBox="0 0 ${w} ${h}">
-          <line x1="${pad}" y1="${(h - pad).toFixed(1)}" x2="${w - pad}" y2="${(h - pad).toFixed(1)}" stroke="var(--border)" />
-          <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" />
-          ${dots}${labels}
-        </svg>
-      </div>
+      <div class="section-head"><h2>Main-effect curve</h2><span class="note">every other knob held at baseline · hover for values</span></div>
+      <div class="card">${chart}</div>
     </section>
     <section>
       <div class="section-head"><h2>Baseline design</h2></div>
@@ -763,12 +1269,46 @@ function renderSweep(obj) {
 
 /* ---------------- pairwise interaction (design_sensitivity.interaction_sweep) view ---------------- */
 
+function rampRgb(t) {
+  const cs = getComputedStyle(document.documentElement);
+  const lo = cs.getPropertyValue("--grid-lo").trim().split(",").map(Number);
+  const hi = cs.getPropertyValue("--grid-hi").trim().split(",").map(Number);
+  const k = Math.max(0, Math.min(1, t));
+  return lo.map((l, i) => Math.round(l + (hi[i] - l) * k));
+}
 function heatmapColor(v, vMin, vMax) {
-  const t = vMax === vMin ? 0 : Math.max(0, Math.min(1, (v - vMin) / (vMax - vMin)));
-  const lo = getComputedStyle(document.documentElement).getPropertyValue("--grid-lo").trim().split(",").map(Number);
-  const hi = getComputedStyle(document.documentElement).getPropertyValue("--grid-hi").trim().split(",").map(Number);
-  const c = lo.map((l, i) => Math.round(l + (hi[i] - l) * t));
+  const c = rampRgb(vMax === vMin ? 0 : (v - vMin) / (vMax - vMin));
   return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+/**
+ * Pick whichever of near-white / near-black actually contrasts with the cell.
+ * The cell text colour used to be a hardcoded #0a0e12, which sits at 1.32:1
+ * against the dark end of the dark-mode ramp -- the low-speed cells, i.e. exactly
+ * the ones you scan for when hunting an infeasible corner of the grid.
+ */
+function readableOn(rgb) {
+  const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  const onDark = (L + 0.05) / 0.05;            // vs #000
+  const onLight = 1.05 / (L + 0.05);           // vs #fff
+  // Pure black/white rather than near-black: the ramp's mid-tones are the worst
+  // case for either choice, and the tinted near-black lost ~0.1 of the ratio there,
+  // which was enough to drop the midpoint under the 4.5:1 AA threshold.
+  return onDark >= onLight ? "#000000" : "#ffffff";
+}
+/** Colour the grid after insertion, so a theme switch can simply repaint it. */
+function paintHeatmap(root) {
+  (root || document).querySelectorAll("table.heatmap td.cell").forEach(td => {
+    const t = Number(td.dataset.t);
+    if (!Number.isFinite(t)) return;
+    const rgb = rampRgb(t);
+    td.style.background = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    td.style.color = readableOn(rgb);
+  });
+  (root || document).querySelectorAll(".scale-legend .ramp").forEach(el => {
+    const a = rampRgb(0), b = rampRgb(0.5), c = rampRgb(1);
+    el.style.background = `linear-gradient(90deg, rgb(${a}) 0%, rgb(${b}) 50%, rgb(${c}) 100%)`;
+  });
 }
 function fmtAxisVal(v) {
   if (typeof v === "boolean") return v ? "true" : "false";
@@ -779,26 +1319,57 @@ function fmtAxisVal(v) {
   return v.toFixed(3);
 }
 function renderInteraction(obj) {
-  const flat = obj.grid.flat();
+  const flat = obj.grid.flat().filter(Number.isFinite);
   const vMin = Math.min(...flat), vMax = Math.max(...flat);
+  const span = vMax - vMin;
+  let bestI = 0, bestJ = 0, bestV = -Infinity;
+  obj.grid.forEach((row, i) => row.forEach((v, j) => { if (v > bestV) { bestV = v; bestI = i; bestJ = j; } }));
+
   let rows = "";
   obj.values_a.forEach((va, i) => {
     rows += `<tr><td class="row-label">${fmtAxisVal(va)}</td>`;
-    obj.grid[i].forEach(v => { rows += `<td class="cell" style="background:${heatmapColor(v, vMin, vMax)}">${fmtNum(v)}</td>`; });
+    obj.grid[i].forEach((v, j) => {
+      const t = span === 0 ? 0 : (v - vMin) / span;
+      const isBest = i === bestI && j === bestJ;
+      rows += `<td class="cell" data-t="${t.toFixed(4)}"${isBest ? ' style="outline:2px solid var(--text);outline-offset:-2px"' : ""} title="${escapeHtml(obj.knob_a)}=${fmtAxisVal(va)}, ${escapeHtml(obj.knob_b)}=${fmtAxisVal(obj.values_b[j])} → ${fmtNum(v)} m/s">${fmtNum(v)}</td>`;
+    });
     rows += `</tr>`;
   });
   const header = obj.values_b.map(vb => `<th>${fmtAxisVal(vb)}</th>`).join("");
+  const cols = obj.values_b.length + 1;
+
   return `
     <div class="hero">
       <div class="hero-top">
         <span class="pill neutral">Interaction sweep</span>
-        <span class="hero-best" style="font-size:1.1rem">${obj.knob_a} × ${obj.knob_b}</span>
+        <span style="font-family:var(--mono);font-size:0.82rem;color:var(--text-muted)">${obj.values_a.length} × ${obj.values_b.length} grid</span>
+        <span class="hero-best" style="font-size:1.15rem">${escapeHtml(String(obj.knob_a))} × ${escapeHtml(String(obj.knob_b))}</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><div class="k">best cell</div><div class="v">${fmtNum(bestV, 2)} m/s</div></div>
+        <div class="stat"><div class="k">at ${escapeHtml(String(obj.knob_a))}</div><div class="v">${fmtAxisVal(obj.values_a[bestI])}</div></div>
+        <div class="stat"><div class="k">at ${escapeHtml(String(obj.knob_b))}</div><div class="v">${fmtAxisVal(obj.values_b[bestJ])}</div></div>
+        <div class="stat"><div class="k">spread</div><div class="v">${fmtNum(span, 2)} m/s</div></div>
       </div>
     </div>
     <section>
-      <div class="section-head"><h2>Exit speed grid (m/s)</h2></div>
-      <div class="card heatmap-wrap">
-        <table class="heatmap"><thead><tr><th class="corner"></th>${header}</tr></thead><tbody>${rows}</tbody></table>
+      <div class="section-head"><h2>Exit speed grid (m/s)</h2><span class="note">outlined cell is the grid maximum</span></div>
+      <div class="card">
+        <div class="heatmap-layout">
+          <div class="axis-a-title">${escapeHtml(String(obj.knob_a))}</div>
+          <div class="heatmap-wrap">
+            <table class="heatmap">
+              <thead>
+                <tr><td colspan="${cols}" class="axis-b-title">${escapeHtml(String(obj.knob_b))}</td></tr>
+                <tr><th class="corner"></th>${header}</tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="scale-legend">
+          <span>${fmtNum(vMin, 2)}</span><span class="ramp"></span><span>${fmtNum(vMax, 2)} m/s</span>
+        </div>
       </div>
     </section>
   `;
@@ -806,43 +1377,64 @@ function renderInteraction(obj) {
 
 /* ---------------- FEM coupling analysis (fem_coupling_analysis) view ---------------- */
 
-const FEM_CURRENT_PALETTE = ["var(--accent)", "var(--good)", "var(--warn)", "var(--bad)"];
+const FEM_CURRENT_PALETTE = ["var(--series-a)", "var(--series-d)", "var(--series-b)", "var(--series-c)"];
 function currentColor(i) { return FEM_CURRENT_PALETTE[i % FEM_CURRENT_PALETTE.length]; }
 
 function femForceChart(obj) {
-  const w = 900, h = 260, pad = 44;
   const offsetsMm = obj.offsets_m.map(o => o * 1000);
-  const allY = obj.force_analytic_n.flat().concat(obj.force_fem_reference_n.flat());
-  const yAbsMax = Math.max(...allY.map(Math.abs), 1e-9) * 1.12;
-  const xMin = Math.min(...offsetsMm), xMax = Math.max(...offsetsMm);
-  const sx = x => pad + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (w - 2 * pad);
-  const midY = h / 2;
-  const sy = y => midY - (y / yAbsMax) * (midY - pad * 0.5);
-
-  let svg = `<line x1="${pad}" y1="${midY.toFixed(1)}" x2="${w - pad}" y2="${midY.toFixed(1)}" stroke="var(--border)" />`;
-  svg += `<line x1="${sx(0).toFixed(1)}" y1="${(pad * 0.3).toFixed(1)}" x2="${sx(0).toFixed(1)}" y2="${(h - pad * 0.3).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2,3" />`;
-
-  const legendEntries = [];
+  const series = [], legendEntries = [];
   obj.currents_a.forEach((i_a, idx) => {
     const color = currentColor(idx);
-    const analyticRow = obj.force_analytic_n[idx];
-    const femRow = obj.force_fem_reference_n[idx];
-    const analyticPath = offsetsMm.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(analyticRow[i]).toFixed(1)}`).join(" ");
-    const femPath = offsetsMm.map((x, i) => `${i === 0 ? "M" : "L"}${sx(x).toFixed(1)},${sy(femRow[i]).toFixed(1)}`).join(" ");
-    svg += `<path d="${analyticPath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-dasharray="5,4" opacity="0.8" />`;
-    svg += `<path d="${femPath}" fill="none" stroke="${color}" stroke-width="2.2" />`;
+    series.push({ label: `${fmtNum(i_a, 1)} A · FEM`, ys: obj.force_fem_reference_n[idx], color, width: 2.2 });
+    series.push({ label: `${fmtNum(i_a, 1)} A · analytic`, ys: obj.force_analytic_n[idx], color, width: 1.6, dashed: true });
     legendEntries.push(`<span><span class="sw" style="background:${color}"></span>${fmtNum(i_a, 1)} A</span>`);
   });
-
-  const chartSvg = `<svg viewBox="0 0 ${w} ${h}">
-    ${svg}
-    <text x="${pad}" y="16" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">force (N)</text>
-    <text x="${w - pad}" y="${h - 10}" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)" text-anchor="end">offset (mm)</text>
-  </svg>`;
+  const chartSvg = lineChart({
+    x: offsetsMm,
+    xLabel: "slug offset from coil centre (mm)",
+    xFmt: v => v.toFixed(0),
+    height: 290,
+    ariaLabel: "Axial force against slug offset, analytic versus FEM reference, per current level",
+    left: { label: "force (N)", series },
+  });
   return { chartSvg, legendEntries };
 }
 
-function femGeometrySchematic(geo) {
+function fieldLinePaths(fieldLines, z, rUp, rDown) {
+  // fieldLines: [[[r_m, z_m], ...], ...] from FemmBackend.field_lines (real FEMM solve,
+  // RK4-traced along mo_getb -- see fem/femm_backend.py). Each meridian-plane line is drawn
+  // twice (rUp/rDown) to show both halves of the axisymmetric revolve, same convention the
+  // coil/magnet rects above already use. Points outside the viewBox are simply clipped by
+  // the SVG viewport -- lines seeded on the magnet routinely extend into FEMM's much larger
+  // solved domain, and only the near-field portion (what fits this schematic) is relevant.
+  if (!fieldLines || !fieldLines.length) return "";
+
+  const pathD = pts => pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const arrowhead = pts => {
+    if (pts.length < 3) return "";
+    const mid = Math.floor(pts.length / 2);
+    const [x0, y0] = pts[Math.max(0, mid - 1)];
+    const [x1, y1] = pts[Math.min(pts.length - 1, mid + 1)];
+    const angleDeg = Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI;
+    const [cx, cy] = pts[mid];
+    return `<polygon points="5,0 -4,-3.2 -4,3.2" fill="var(--warn)" fill-opacity="0.7" ` +
+      `transform="translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${angleDeg.toFixed(1)})" />`;
+  };
+
+  let svg = "";
+  for (const line of fieldLines) {
+    if (line.length < 2) continue;
+    const up = line.map(([r, zM]) => [z(zM), rUp(r)]);
+    const down = line.map(([r, zM]) => [z(zM), rDown(r)]);
+    svg += `<path d="${pathD(up)}" fill="none" stroke="var(--warn)" stroke-width="0.9" stroke-opacity="0.6" />`;
+    svg += `<path d="${pathD(down)}" fill="none" stroke="var(--warn)" stroke-width="0.9" stroke-opacity="0.6" />`;
+    svg += arrowhead(up);
+    svg += arrowhead(down);
+  }
+  return svg;
+}
+
+function femGeometrySchematic(geo, fieldLines) {
   const w = 900, h = 260;
   const padX = 90, padY = 46;
   const maxZ = Math.max(geo.coil_length_m, geo.magnet_length_m) / 2 * 1.25;
@@ -864,18 +1456,28 @@ function femGeometrySchematic(geo) {
     `width="${Math.abs(x1 - x0).toFixed(1)}" height="${Math.abs(y1 - y0).toFixed(1)}" ` +
     `fill="${fill}" fill-opacity="0.28" stroke="${stroke}" stroke-width="1.2" />`;
 
+  const fieldSvg = fieldLinePaths(fieldLines, z, rUp, rDown);
   const coilTop = rect(coilZ0, coilZ1, coilOuter, coilInner, "var(--accent)", "var(--accent)");
   const coilBottom = rect(coilZ0, coilZ1, coilInnerNeg, coilOuterNeg, "var(--accent)", "var(--accent)");
   const magTop = rect(magZ0, magZ1, magEdge, cy, "var(--bad)", "var(--bad)");
   const magBottom = rect(magZ0, magZ1, cy, magEdgeNeg, "var(--bad)", "var(--bad)");
   const axis = `<line x1="${(padX * 0.4).toFixed(1)}" y1="${cy.toFixed(1)}" x2="${(w - padX * 0.4).toFixed(1)}" y2="${cy.toFixed(1)}" stroke="var(--text-muted)" stroke-dasharray="6,4" />`;
-  const labelCoil = `<text x="${((coilZ0 + coilZ1) / 2).toFixed(1)}" y="${(coilOuter - 8).toFixed(1)}" font-family="ui-monospace,monospace" font-size="10" fill="var(--accent)" text-anchor="middle">coil, ${geo.turns}t</text>`;
-  const labelMag = `<text x="${((magZ0 + magZ1) / 2).toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-family="ui-monospace,monospace" font-size="10" fill="var(--bad)" text-anchor="middle" dominant-baseline="middle">PM</text>`;
-  const labelGap = `<text x="${(coilZ0 - 6).toFixed(1)}" y="${(cy - 3).toFixed(1)}" font-family="ui-monospace,monospace" font-size="9" fill="var(--text-muted)" text-anchor="end">${(geo.bore_clearance_m * 1000).toFixed(2)}mm gap</text>`;
+  const labelCoil = `<text class="axis-title" x="${((coilZ0 + coilZ1) / 2).toFixed(1)}" y="${(coilOuter - 8).toFixed(1)}" fill="var(--accent)" text-anchor="middle">coil, ${geo.turns}t</text>`;
+  const labelMag = `<text class="axis-title" x="${((magZ0 + magZ1) / 2).toFixed(1)}" y="${(cy + 3).toFixed(1)}" fill="var(--bad)" text-anchor="middle" dominant-baseline="middle">PM</text>`;
+  const labelGap = `<text class="tick" x="${(coilZ0 - 6).toFixed(1)}" y="${(cy - 3).toFixed(1)}" text-anchor="end">${(geo.bore_clearance_m * 1000).toFixed(2)}mm gap</text>`;
+  // A schematic with no length reference reads as unitless; this is the scale bar.
+  const barMeters = niceNum((maxZ * 2) / 4, true);
+  const barY = h - 16, barX0 = padX * 0.4, barX1 = barX0 + barMeters * scale;
+  const scaleBar = `<g>
+    <line class="axis-line" x1="${barX0.toFixed(1)}" y1="${barY}" x2="${barX1.toFixed(1)}" y2="${barY}" />
+    <line class="axis-line" x1="${barX0.toFixed(1)}" y1="${barY - 4}" x2="${barX0.toFixed(1)}" y2="${barY + 4}" />
+    <line class="axis-line" x1="${barX1.toFixed(1)}" y1="${barY - 4}" x2="${barX1.toFixed(1)}" y2="${barY + 4}" />
+    <text class="tick" x="${(barX1 + 8).toFixed(1)}" y="${barY}" dominant-baseline="middle">${(barMeters * 1000).toFixed(barMeters < 0.001 ? 2 : 1)} mm</text>
+  </g>`;
 
-  return `<svg viewBox="0 0 ${w} ${h}">
-    ${axis}${coilTop}${coilBottom}${magTop}${magBottom}${labelCoil}${labelMag}${labelGap}
-    <text x="${(padX * 0.4).toFixed(1)}" y="16" font-family="ui-monospace,monospace" font-size="10" fill="var(--text-muted)">axisymmetric cross-section, full revolve shown (axis of rotation dashed)</text>
+  return `<svg class="schematic" viewBox="0 0 ${w} ${h}" role="img" aria-label="Axisymmetric cross-section of the coil and permanent-magnet slug">
+    ${axis}${fieldSvg}${coilTop}${coilBottom}${magTop}${magBottom}${labelCoil}${labelMag}${labelGap}${scaleBar}
+    <text class="tick" x="${(padX * 0.4).toFixed(1)}" y="16">full revolve shown · axis of rotation dashed</text>
   </svg>`;
 }
 
@@ -901,11 +1503,14 @@ function renderFem(obj) {
       </div>
     </div>
 
-    ${diffPct !== null && Math.abs(diffPct) >= 10 ? `<div class="error-box" style="background:var(--warn-soft);color:var(--warn);margin-bottom:1.6rem">⚠ Peak force differs by ${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(1)}% between the analytic and FEM-reference coupling shapes for this geometry -- see docs/FEM_PIPELINE.md's "Using it in the design optimizer and sensitivity sweeps" for how this can change which design a search reports as best.</div>` : ""}
+    ${diffPct !== null && Math.abs(diffPct) >= 10 ? `<div class="callout warn" style="margin-bottom:1.6rem"><span class="ico">⚠</span><div>
+      <b>Peak force differs by ${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(1)}%</b> between the analytic and FEM-reference
+      coupling shapes for this geometry. See <a href="../../docs/FEM_PIPELINE.md">docs/FEM_PIPELINE.md</a> —
+      "Using it in the design optimizer and sensitivity sweeps" — for how this can change which design a search reports as best.</div></div>` : ""}
 
     <section>
-      <div class="section-head"><h2>Force vs. slug offset</h2><span class="note">analytic (Gaussian lobe, dashed) vs FEM reference (real coupling shape, solid), by current level</span></div>
-      <div class="card chart-wrap">
+      <div class="section-head"><h2>Force vs. slug offset</h2><span class="note">analytic (Gaussian lobe, dashed) vs FEM reference (real coupling shape, solid), by current level · hover for values</span></div>
+      <div class="card">
         ${chartSvg}
         <div class="chart-legend">${legendEntries.join("")}</div>
         <div class="chart-legend" style="margin-top:0.35rem">
@@ -916,8 +1521,9 @@ function renderFem(obj) {
     </section>
 
     <section>
-      <div class="section-head"><h2>Coil / slug cross-section</h2><span class="note">axisymmetric geometry these curves were computed from</span></div>
-      <div class="card chart-wrap">${femGeometrySchematic(geo)}</div>
+      <div class="section-head"><h2>Coil / slug cross-section</h2><span class="note">axisymmetric geometry these curves were computed from${obj.field_lines && obj.field_lines.length ? ` · real field lines, FEMM solve at offset ${fmtNum(obj.field_line_offset_m, 4)} m, ${fmtNum(obj.field_line_current_a, 2)} A` : ""}</span></div>
+      ${obj.field_lines_note ? `<div class="callout info" style="margin-bottom:0.9rem"><span class="ico">ℹ</span><div>${escapeHtml(obj.field_lines_note)} — call <code>fem_coupling_analysis(field_lines=true)</code> again once installed to see them here.</div></div>` : ""}
+      <div class="card"><div class="chart-scroll">${femGeometrySchematic(geo, obj.field_lines)}</div></div>
       <div class="spec-grid" style="margin-top:0.9rem">
         <div class="spec-group">
           <div class="g-title">coil winding</div>
@@ -1039,6 +1645,29 @@ window.addEventListener("drop", e => {
 if (!window.showOpenFilePicker) {
   document.getElementById("btn-open").textContent = "Choose results file…";
 }
+
+/* ---------------- theme ----------------
+   The dark/light token blocks already existed but nothing ever set data-theme, so
+   the page was locked to whatever the OS reported. This is that missing control. */
+const THEME_KEY = "emac-dashboard-theme";
+function applyTheme(mode) {
+  if (mode === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", mode);
+  document.querySelectorAll("#theme-toggle button").forEach(b => {
+    b.setAttribute("aria-pressed", String(b.dataset.themeSet === mode));
+  });
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) { /* private mode */ }
+  // The heatmap ramp and cell text are computed from resolved token values, so
+  // they have to be repainted rather than left to cascade.
+  paintHeatmap();
+}
+document.getElementById("theme-toggle").addEventListener("click", ev => {
+  const btn = ev.target.closest("button[data-theme-set]");
+  if (btn) applyTheme(btn.dataset.themeSet);
+});
+let savedTheme = "auto";
+try { savedTheme = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* private mode */ }
+applyTheme(savedTheme);
 </script>
 
 </body>

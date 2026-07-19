@@ -84,3 +84,16 @@ Python module, not an MCP tool here) to see a pairwise heatmap, or a `fem_coupli
 result to see one coil's force-vs-offset curve under both the analytic and FEM-reference
 coupling shapes (overlaid, color-coded by current level) alongside an axisymmetric coil/slug
 cross-section schematic and a peak-force divergence stat -- see docs/FEM_PIPELINE.md.
+
+**Reading the charts.** Every chart carries labelled value axes and gridlines, and hovering
+anywhere on one snaps a crosshair to the nearest sample and reads out each series' value at
+that point. Series that share a time axis but not a unit -- position against velocity, coil
+current against temperature -- are drawn on independent left/right axes, so both traces use
+the full plot height instead of the smaller one flattening against the baseline. Chart labels
+hold a constant size regardless of window width.
+
+**Theme.** The header has an auto / light / dark switch; `auto` follows the OS setting. The
+choice persists in `localStorage`.
+
+**Keyboard.** With the slug-animation track focused: `Space` plays/pauses, `<-` / `->` step one
+sample (hold `Shift` for ten), `Home` / `End` jump to either end of the trajectory.
